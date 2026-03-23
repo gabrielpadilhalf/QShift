@@ -1,15 +1,16 @@
 import { Settings } from 'lucide-react';
-import BaseLayout from '../layouts/BaseLayout.jsx';
-import Header from '../components/Header.jsx';
+import { ObjAppLayout } from '../atomic/ObjAppLayout';
+import { MolPageHeader } from '../atomic/MolPageHeader';
+import { AtmText } from '../atomic/AtmText/index.js';
 
-function SettingsPage({}) {
+function SettingsPage() {
   return (
-    <BaseLayout currentPage={4}>
-      <Header title="System Settings" icon={Settings} />
+    <ObjAppLayout currentPage={4}>
+      <MolPageHeader title="System Settings" icon={Settings} />
       <div className="space-y-4">
-        <div className="text-slate-400">Configurations under development...</div>
+        <AtmText size="sm" color="muted">Configurations under development...</AtmText>
       </div>
-    </BaseLayout>
+    </ObjAppLayout>
   );
 }
 
