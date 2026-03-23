@@ -1,26 +1,18 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AuthLayout from '../layouts/AuthLayout.jsx';
+import { useState } from 'react';
+import { MolLabeledInput } from '../atomic/MolLabeledInput';
+import { Button, LinkButton } from '../atomic/AtmButton/index.js';
+import { AtmText } from '../atomic/AtmText/index.js';
 import { RegisterApi } from '../services/api.js';
 
-function RegisterPage({}) {
+function RegisterPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [confEmail, setConfEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!email || !password || !confEmail) {
-      setError('Fill in all fields');
-      return;
-    } else if (email !== confEmail) {
-      setError('The emails are not the same');
-      return;
-    }
-
+  const handleRegister = async (email, confEmail, password, setError) => {
     try {
       const responseRegister = await RegisterApi.registerUser(email, password);
       if (responseRegister.data) {
@@ -37,76 +29,75 @@ function RegisterPage({}) {
     }
   };
 
-  const goToLogin = () => {
-    navigate('/login');
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+    if (!email || !password || !confEmail) {
+      setError('Fill in all fields');
+      return;
+    }
+    if (email !== confEmail) {
+      setError('The emails are not the same');
+      return;
+    }
+    handleRegister(email, confEmail, password, setError);
   };
 
   return (
-    <AuthLayout title="Register">
-      <form onSubmit={handleRegister}>
-        {error && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-            {error}
-          </div>
-        )}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2" htmlFor="email">
-            Email
-          </label>
-          <input
-            type="email"
+    <div className="min-h-screen flex items-center justify-center bg-slate-900">
+      <div className="bg-slate-800 p-8 rounded-xl shadow-2xl w-full max-w-md border border-slate-600">
+        <AtmText as="h3" size="2xl" weight="semibold" color="dimmer" className="mb-6 text-center block">Register</AtmText>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg">
+              <AtmText size="sm" color="red">{error}</AtmText>
+            </div>
+          )}
+          <MolLabeledInput
+            label="Email"
             id="email"
+            type="email"
             placeholder="Enter your email"
-            className="w-full px-4 py-2 mb-4 rounded-lg bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            variant='auth'
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2" htmlFor="confirm-email">
-            Confirm Email
-          </label>
-          <input
-            type="email"
+          <MolLabeledInput
+            label="Confirm Email"
             id="confirm-email"
+            type="email"
             placeholder="Confirm your email"
-            className="w-full px-4 py-2 mb-4 rounded-lg bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={confEmail}
             onChange={(e) => setConfEmail(e.target.value)}
             required
+            variant='auth'
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2" htmlFor="password">
-            Password
-          </label>
-          <input
-            type="password"
+          <MolLabeledInput
+            label="Password"
             id="password"
+            type="password"
             placeholder="Enter your password"
-            className="w-full px-4 py-2 mb-6 rounded-lg bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            className="mb-2"
+            variant='auth'
           />
+          <Button type="submit" fullWidth variant='primary' size='lg'>
+            Register
+          </Button>
+        </form>
+        <div className="mt-5 text-center">
+          <AtmText as="p" size="sm" color="muted">
+            Already have an account?{' '}
+            <LinkButton onClick={() => navigate('/login')}>
+              Login
+            </LinkButton>
+          </AtmText>
         </div>
-        <button
-          type="submit"
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition-colors"
-        >
-          Register
-        </button>
-      </form>
-      <div className="mt-4 text-center">
-        <p className="text-slate-400 text-sm">
-          Already have an account?{' '}
-          <button
-            onClick={goToLogin}
-            className="text-blue-500 hover:text-blue-400 font-medium hover:underline transition-colors cursor-pointer"
-          >
-            Login
-          </button>
-        </p>
       </div>
-    </AuthLayout>
+    </div>
   );
 }
 

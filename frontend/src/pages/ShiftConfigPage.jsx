@@ -1,10 +1,13 @@
-import BaseLayout from '../layouts/BaseLayout';
-import Header from '../components/Header';
+import { ObjAppLayout as BaseLayout } from '../atomic/ObjAppLayout';
+import { MolPageHeader } from '../atomic/MolPageHeader';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Save, RotateCcw, Calendar, Trash2, ArrowLeft } from 'lucide-react';
 import { GeneratedScheduleApi } from '../services/api.js';
 import { daysOfWeek } from '../constants/constantsOfTable.js';
+import { Button } from '../atomic/AtmButton/index.js';
+import { AtmInput } from '../atomic/AtmInput/index.js';
+import { MolLoadingPage } from '../atomic/MolLoadingPage';
 
 function ShiftConfigPage({
   selectedDays,
@@ -20,9 +23,7 @@ function ShiftConfigPage({
   const selectedDaysMap = {};
 
   useEffect(() => {
-    if (!startDate || !selectedDays || selectedDays.length === 0) {
-      navigate('/staff');
-    }
+    if (!startDate || !selectedDays || selectedDays.length === 0) navigate('/staff');
   }, [startDate, selectedDays, navigate]);
 
   selectedDays.forEach((day) => {
@@ -46,30 +47,18 @@ function ShiftConfigPage({
     },
   ]);
 
-  const handleBack = () => {
-    navigate('/calendar');
-  };
+  const handleBack = () => navigate('/calendar');
 
   const addTurn = () => {
     const newWeekShift = {
       id: Date.now(),
-      config: [
-        { weekday: 0, start_time: '', end_time: '', min_staff: null },
-        { weekday: 1, start_time: '', end_time: '', min_staff: null },
-        { weekday: 2, start_time: '', end_time: '', min_staff: null },
-        { weekday: 3, start_time: '', end_time: '', min_staff: null },
-        { weekday: 4, start_time: '', end_time: '', min_staff: null },
-        { weekday: 5, start_time: '', end_time: '', min_staff: null },
-        { weekday: 6, start_time: '', end_time: '', min_staff: null },
-      ],
+      config: daysOfWeek.map((_, i) => ({ weekday: i, start_time: '', end_time: '', min_staff: null })),
     };
     setWeekShifts([...weekShifts, newWeekShift]);
   };
 
   const removeShift = (weekShiftId) => {
-    if (weekShifts.length > 1) {
-      setWeekShifts(weekShifts.filter((weekShift) => weekShift.id !== weekShiftId));
-    }
+    if (weekShifts.length > 1) setWeekShifts(weekShifts.filter((ws) => ws.id !== weekShiftId));
   };
 
   const updateShiftConfig = (weekShiftId, dayOfWeek, field, value) => {
@@ -78,15 +67,9 @@ function ShiftConfigPage({
         if (weekShift.id === weekShiftId) {
           return {
             ...weekShift,
-            config: weekShift.config.map((dayConfig, index) => {
-              if (index === dayOfWeek) {
-                return {
-                  ...dayConfig,
-                  [field]: value,
-                };
-              }
-              return dayConfig;
-            }),
+            config: weekShift.config.map((dayConfig, index) =>
+              index === dayOfWeek ? { ...dayConfig, [field]: value } : dayConfig,
+            ),
           };
         }
         return weekShift;
@@ -95,13 +78,13 @@ function ShiftConfigPage({
   };
 
   const saveConfigShift = () => {
-    const configToSave = weekShifts.map((weekShift) => ({
-      id: weekShift.id,
-      config: weekShift.config.map((dayConfig) => ({
-        weekday: dayConfig.weekday,
-        start_time: dayConfig.start_time,
-        end_time: dayConfig.end_time,
-        min_staff: dayConfig.min_staff ? Number(dayConfig.min_staff) : null,
+    const configToSave = weekShifts.map((ws) => ({
+      id: ws.id,
+      config: ws.config.map((dc) => ({
+        weekday: dc.weekday,
+        start_time: dc.start_time,
+        end_time: dc.end_time,
+        min_staff: dc.min_staff ? Number(dc.min_staff) : null,
       })),
     }));
     localStorage.setItem('shiftConfigurations', JSON.stringify(configToSave));
@@ -111,16 +94,10 @@ function ShiftConfigPage({
     const savedConfig = localStorage.getItem('shiftConfigurations');
     if (savedConfig) {
       const parsedConfig = JSON.parse(savedConfig);
-      const restoredShifts = parsedConfig.map((weekShift) => ({
-        ...weekShift,
-        config: weekShift.config.map((dayConfig) => ({
-          ...dayConfig,
-          min_staff: dayConfig.min_staff !== null ? Number(dayConfig.min_staff) : null,
-        })),
-      }));
-      setWeekShifts(restoredShifts);
-    } else {
-      console.log('No saved configuration found.');
+      setWeekShifts(parsedConfig.map((ws) => ({
+        ...ws,
+        config: ws.config.map((dc) => ({ ...dc, min_staff: dc.min_staff !== null ? Number(dc.min_staff) : null })),
+      })));
     }
   };
 
@@ -142,16 +119,12 @@ function ShiftConfigPage({
             errors.push(`${labelShift}: Missing ${missingFields.join(', ')}`);
             return;
           }
-
           if (shift.start_time && shift.end_time && shift.start_time >= shift.end_time) {
-            errors.push(`${labelShift}: End time must be after start time.`);
-            return;
+            errors.push(`${labelShift}: End time must be after start time.`); return;
           }
           if (shift.min_staff && Number(shift.min_staff) < 0) {
-            errors.push(`${labelShift}: Minimum number of employees must be greater than 0.`);
-            return;
+            errors.push(`${labelShift}: Minimum number of employees must be greater than 0.`); return;
           }
-
           if (hasAllFields) {
             shiftsSchedule.push({
               id: crypto.randomUUID(),
@@ -164,32 +137,15 @@ function ShiftConfigPage({
         }
       });
     });
-    if (errors.length > 0) {
-      return { success: false, errors };
-    }
-
-    if (shiftsSchedule.length === 0) {
-      return {
-        sucess: false,
-        errors: [
-          'Please configure at least one complete shift (with start time, end time, and number of employees).',
-        ],
-      };
-    }
+    if (errors.length > 0) return { success: false, errors };
+    if (shiftsSchedule.length === 0)
+      return { sucess: false, errors: ['Please configure at least one complete shift (with start time, end time, and number of employees).'] };
     setShiftsData(shiftsSchedule);
     return { sucess: true, data: shiftsSchedule };
   };
 
   const convertScheduleData = (shifts) => {
-    let scheduleModified = {
-      Monday: [],
-      Tuesday: [],
-      Wednesday: [],
-      Thursday: [],
-      Friday: [],
-      Saturday: [],
-      Sunday: [],
-    };
+    let scheduleModified = { Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: [], Sunday: [] };
     shifts.forEach((shift, index) => {
       const dayName = daysOfWeek[shift.weekday];
       scheduleModified[dayName].push({
@@ -197,10 +153,7 @@ function ShiftConfigPage({
         startTime: shift.start_time.slice(0, 5),
         endTime: shift.end_time.slice(0, 5),
         minEmployees: shift.min_staff,
-        employees: shift.employees.map((emp) => ({
-          id: emp.employee_id,
-          name: emp.name,
-        })),
+        employees: shift.employees.map((emp) => ({ id: emp.employee_id, name: emp.name })),
       });
     });
     daysOfWeek.forEach((day) => {
@@ -209,7 +162,6 @@ function ShiftConfigPage({
         if (a.startTime > b.startTime) return 1;
         if (a.endTime < b.endTime) return -1;
         if (a.endTime > b.endTime) return 1;
-
         return 0;
       });
     });
@@ -225,72 +177,41 @@ function ShiftConfigPage({
       alert(`Please fix the following issues:\n\n${errorMessage}`);
       return;
     }
-
     const shiftsSchedule = result.data;
     if (shiftsSchedule) {
       setIsLoading(true);
       try {
-        const week = {
-          start_date: startDate.toISOString().split('T')[0],
-          open_days: openDaysMask,
-        };
+        const week = { start_date: startDate.toISOString().split('T')[0], open_days: openDaysMask };
         setWeekData(week);
-        const responsePreviewSchedule = await GeneratedScheduleApi.generateSchedulePreview({
-          shift_vector: shiftsSchedule,
-        });
+        const responsePreviewSchedule = await GeneratedScheduleApi.generateSchedulePreview({ shift_vector: shiftsSchedule });
         const preciewScheduleData = responsePreviewSchedule.data;
-
         if (preciewScheduleData.possible && preciewScheduleData.schedule) {
           const convertedData = convertScheduleData(preciewScheduleData.schedule.shifts);
           setPreviewSchedule(convertedData);
         } else {
-          alert(
-            'Unable to generate a viable schedule with the current settings. Check shift and employee settings.',
-          );
+          alert('Unable to generate a viable schedule with the current settings. Check shift and employee settings.');
           navigate('/staff');
         }
-
         navigate('/schedule');
       } catch (error) {
         console.error('Error creating schedule:', error);
-
-        if (error.response) {
-          console.error('Server response:', error.response.data);
-          alert(`Error: ${error.response.data.detail || 'Error creating schedule'}`);
-        } else if (error.request) {
-          console.error('No response from server:', error.request);
-          alert('Error: Server did not respond. Check if the backend is running.');
-        } else {
-          console.error('Configuration error:', error.message);
-          alert(`Error: ${error.message}`);
-        }
-
+        if (error.response) { alert(`Error: ${error.response.data.detail || 'Error creating schedule'}`); }
+        else if (error.request) { alert('Error: Server did not respond. Check if the backend is running.'); }
+        else { alert(`Error: ${error.message}`); }
         setIsLoading(false);
       }
     }
   };
 
-  if (isLoading) {
-    return (
-      <BaseLayout showSidebar={false} currentPage={6}>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-400">Loading...</p>
-          </div>
-        </div>
-      </BaseLayout>
-    );
-  }
+  if (isLoading) return (
+    <BaseLayout currentPage={6} showSidebar={false}>
+      <MolLoadingPage />
+    </BaseLayout>
+  );
 
   return (
-    <BaseLayout
-      showSidebar={false}
-      currentPage={6}
-      showSelectionPanel={true}
-      selectionPanelData={{ startDate, selectedDays }}
-    >
-      <Header title="Shift Configuration" />
+    <BaseLayout showSidebar={false} currentPage={6} showSelectionPanel={true} selectionPanelData={{ startDate, selectedDays }}>
+      <MolPageHeader title="Shift Configuration" />
       <div className="bg-slate-800 rounded-lg overflow-x-auto border border-slate-700 mb-6">
         <table className="w-full">
           <thead>
@@ -298,9 +219,7 @@ function ShiftConfigPage({
               {daysOfWeek.map((day, idx) => (
                 <th
                   key={idx}
-                  className={`px-4 py-3 text-center text-sm font-bold ${
-                    selectedDaysMap[idx] ? 'text-slate-200' : 'text-slate-500'
-                  }`}
+                  className={`px-4 py-3 text-center text-sm font-bold ${selectedDaysMap[idx] ? 'text-slate-200' : 'text-slate-500'}`}
                 >
                   {day}
                 </th>
@@ -312,41 +231,35 @@ function ShiftConfigPage({
             {weekShifts.map((weekShift) => (
               <tr key={weekShift.id} className="border-t border-slate-700 hover:bg-slate-750">
                 {daysOfWeek.map((day, dayIdx) => (
-                  <td
-                    key={dayIdx}
-                    className={`px-2 py-3 ${!selectedDaysMap[dayIdx] ? 'bg-slate-900' : ''}`}
-                  >
+                  <td key={dayIdx} className={`px-2 py-3 ${!selectedDaysMap[dayIdx] ? 'bg-slate-900' : ''}`}>
                     {selectedDaysMap[dayIdx] ? (
                       <div className="flex flex-col gap-2 min-w-[140px]">
                         <div className="flex gap-1">
-                          <input
+                          <AtmInput
                             type="time"
                             value={weekShift.config[dayIdx].start_time}
-                            onChange={(e) => {
-                              updateShiftConfig(weekShift.id, dayIdx, 'start_time', e.target.value);
-                            }}
-                            className="w-full px-2 py-1 bg-slate-700 text-white text-xs rounded border border-slate-600 focus:border-blue-500 focus:outline-none"
+                            onChange={(e) => updateShiftConfig(weekShift.id, dayIdx, 'start_time', e.target.value)}
+                            size="sm"
+                            variant="shiftConfig"
                             placeholder="Begin"
                           />
-                          <input
+                          <AtmInput
                             type="time"
                             value={weekShift.config[dayIdx].end_time}
-                            onChange={(e) => {
-                              updateShiftConfig(weekShift.id, dayIdx, 'end_time', e.target.value);
-                            }}
-                            className="w-full px-2 py-1 bg-slate-700 text-white text-xs rounded border border-slate-600 focus:border-blue-500 focus:outline-none"
+                            onChange={(e) => updateShiftConfig(weekShift.id, dayIdx, 'end_time', e.target.value)}
+                            size="sm"
+                            variant="shiftConfig"
                             placeholder="End"
                           />
                         </div>
-                        <input
+                        <AtmInput
                           type="number"
                           min="0"
                           max="50"
                           value={weekShift.config[dayIdx].min_staff ?? ''}
-                          onChange={(e) =>
-                            updateShiftConfig(weekShift.id, dayIdx, 'min_staff', e.target.value)
-                          }
-                          className="w-full px-2 py-1 bg-slate-700 text-white text-xs rounded border border-slate-600 focus:border-blue-500 focus:outline-none"
+                          onChange={(e) => updateShiftConfig(weekShift.id, dayIdx, 'min_staff', e.target.value)}
+                          size="sm"
+                          variant="shiftConfig"
                           placeholder="Number of employees"
                         />
                       </div>
@@ -359,11 +272,10 @@ function ShiftConfigPage({
                   <button
                     onClick={() => removeShift(weekShift.id)}
                     disabled={weekShifts.length === 1}
-                    className={`p-2 rounded-lg transition-colors ${
-                      weekShifts.length === 1
-                        ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                        : 'bg-red-600 hover:bg-red-700 text-white'
-                    }`}
+                    className={`p-2 rounded-lg transition-colors ${weekShifts.length === 1
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                      : 'bg-red-600 hover:bg-red-700 text-white'
+                      }`}
                     title="Delete shift"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -385,38 +297,23 @@ function ShiftConfigPage({
 
       <div className="grid grid-cols-2 md:flex md:flex-wrap gap-3">
         <div className="order-3 md:order-none col-span-1 md:flex-1 justify-start flex">
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            Back
+          <Button onClick={handleBack} variant='primary' size='lg'>
             <ArrowLeft size={20} />
-          </button>
+            Back
+          </Button>
         </div>
-
-        <button
-          onClick={restoreConfigShift}
-          className="order-1 md:order-none px-6 py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-        >
+        <Button onClick={restoreConfigShift} variant='secondary' className="order-1 md:order-none" size='lg'>
           <RotateCcw className="w-4 h-4" />
           Restore settings
-        </button>
-
-        <button
-          onClick={saveConfigShift}
-          className="order-2 md:order-none px-6 py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-        >
+        </Button>
+        <Button onClick={saveConfigShift} variant='secondary' className="order-2 md:order-none" size='lg'>
           <Save className="w-4 h-4" />
           Save settings
-        </button>
-
-        <button
-          onClick={createSchedule}
-          className="order-4 md:order-none px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 ml-auto"
-        >
+        </Button>
+        <Button onClick={createSchedule} variant='primary' className="order-4 md:order-none ml-auto" size='lg'>
           <Calendar className="w-4 h-4" />
           Create Schedule
-        </button>
+        </Button>
       </div>
     </BaseLayout>
   );

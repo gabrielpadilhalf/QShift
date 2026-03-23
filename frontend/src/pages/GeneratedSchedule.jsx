@@ -1,11 +1,12 @@
-import BaseLayout from '../layouts/BaseLayout';
-import Header from '../components/Header';
-import ScheduleTable from '../components/ScheduleTable';
+import { ObjAppLayout as BaseLayout } from '../atomic/ObjAppLayout';
+import { MolPageHeader } from '../atomic/MolPageHeader';
+import { ObjScheduleTable } from '../atomic/ObjScheduleTable';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GeneratedScheduleApi } from '../services/api.js';
-import { ShiftConfigApi } from '../services/api.js';
+import { GeneratedScheduleApi, ShiftConfigApi } from '../services/api.js';
 import { daysOfWeek, scheduleEmpty } from '../constants/constantsOfTable.js';
+import { Button } from '../atomic/AtmButton/index.js';
+import { MolLoadingPage } from '../atomic/MolLoadingPage';
 
 function GeneratedSchedule({
   employees,
@@ -28,9 +29,7 @@ function GeneratedSchedule({
       navigate('/staff');
       return;
     }
-    if (isLoading) {
-      setIsLoading(false);
-    }
+    if (isLoading) setIsLoading(false);
   }, [previewSchedule, weekData, navigate]);
 
   const handleCancel = async () => {
@@ -40,22 +39,18 @@ function GeneratedSchedule({
     navigate('/staff');
   };
 
-  const handleEdit = () => {
-    setEditMode(!editMode);
-  };
+  const handleEdit = () => setEditMode(!editMode);
 
   const handleShiftsSchedule = (responseShifts) => {
     return {
-      shifts: responseShifts.map((respShift, index) => {
+      shifts: responseShifts.map((respShift) => {
         const day = daysOfWeek[respShift.weekday];
-
         const previewShift = scheduleData[day]?.find(
           (s) =>
             s.startTime === respShift.start_time.slice(0, 5) &&
             s.endTime === respShift.end_time.slice(0, 5) &&
             s.minEmployees === respShift.min_staff,
         );
-
         return {
           shift_id: respShift.id,
           employee_ids: previewShift ? previewShift.employees.map((e) => e.id) : [],
@@ -67,32 +62,22 @@ function GeneratedSchedule({
   async function handleApproved() {
     let newWeek = null;
     setIsLoading(true);
-
     try {
       newWeek = await ShiftConfigApi.submitWeekData(weekData).then((r) => r.data);
-
       const createdShifts = await Promise.all(
-        shiftsData.map((shift) =>
-          ShiftConfigApi.createShift(newWeek.id, shift).then((r) => r.data),
-        ),
+        shiftsData.map((shift) => ShiftConfigApi.createShift(newWeek.id, shift).then((r) => r.data)),
       );
-
       const shiftsSchedule = handleShiftsSchedule(createdShifts);
-      console.log('All shifts created successfully!');
-
       await GeneratedScheduleApi.approvedSchedule(newWeek.id, shiftsSchedule);
-
       alert('Schedule created successfully!');
       navigate('/staff');
     } catch (error) {
       console.error('Error approving:', error);
-
       if (newWeek) {
         await GeneratedScheduleApi.deleteSchedule(newWeek.id).catch((e) =>
           console.error('Error deleting week:', e),
         );
       }
-
       alert('Error approving schedule.');
       setWeekData(null);
       setShiftsData(null);
@@ -101,23 +86,17 @@ function GeneratedSchedule({
     }
   }
 
-  if (isLoading) {
-    return (
-      <BaseLayout showSidebar={false} currentPage={7}>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-400">Loading...</p>
-          </div>
-        </div>
-      </BaseLayout>
-    );
-  }
+  if (isLoading) return (
+    <BaseLayout currentPage={7} showSidebar={false}>
+      <MolLoadingPage />
+    </BaseLayout>
+  );
+
   return (
     <BaseLayout showSidebar={false} currentPage={7}>
-      <Header title="Generated Schedule" />
+      <MolPageHeader title="Generated Schedule" />
       <div className="p-3">
-        <ScheduleTable
+        <ObjScheduleTable
           scheduleData={scheduleData}
           setScheduleData={setScheduleData}
           employeeList={employees}
@@ -128,45 +107,22 @@ function GeneratedSchedule({
         {!editMode ? (
           <div className="flex flex-col-reverse sm:flex-row mt-4 gap-3 sm:gap-0">
             <div className="flex-1 justify-center sm:justify-start flex w-full sm:w-auto">
-              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5 rounded text-center font-medium">
-                <button
-                  onClick={handleCancel}
-                  className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
+              <Button onClick={handleCancel} responsive variant='secondary' size='lg'>Cancel</Button>
             </div>
-
             <div className="justify-end flex flex-col sm:flex-row flex-1 w-full sm:w-auto gap-2 sm:gap-0">
-              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5 rounded text-center font-medium">
-                <button
-                  onClick={handleEdit}
-                  className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Edit
-                </button>
+              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5">
+                <Button onClick={handleEdit} responsive variant='primary' size='lg'>Edit</Button>
               </div>
-              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5 rounded text-center font-medium">
-                <button
-                  onClick={handleApproved}
-                  className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Approved
-                </button>
+              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5">
+                <Button onClick={handleApproved} responsive variant='success' size='lg'>Approved</Button>
               </div>
             </div>
           </div>
         ) : (
           <div className="flex mt-4">
             <div className="flex-1 justify-center sm:justify-end flex w-full">
-              <div className="w-full sm:w-auto px-0 sm:px-40 py-1.5 rounded text-center font-medium">
-                <button
-                  onClick={handleEdit}
-                  className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Save
-                </button>
+              <div className="w-full sm:w-auto px-0 sm:px-40 py-1.5">
+                <Button onClick={handleEdit} responsive variant='primary' size='lg'>Save</Button>
               </div>
             </div>
           </div>

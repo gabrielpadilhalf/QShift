@@ -1,18 +1,22 @@
-import BaseLayout from '../layouts/BaseLayout';
-import Header from '../components/Header';
-import ScheduleTable from '../components/ScheduleTable';
+import { ObjAppLayout as BaseLayout } from '../atomic/ObjAppLayout';
+import { MolPageHeader } from '../atomic/MolPageHeader';
+import { ObjScheduleTable } from '../atomic/ObjScheduleTable';
 import {
   CalendarRange,
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
   FileSpreadsheet,
+  ArrowLeft,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GeneratedScheduleApi } from '../services/api.js';
 import { exportToExcel } from '../utils/exportSchedule.js';
 import { months, daysOfWeek, scheduleEmpty } from '../constants/constantsOfTable.js';
+import { Button } from '../atomic/AtmButton/index.js';
+import { AtmText } from '../atomic/AtmText/index.js';
+import { MolLoadingPage } from '../atomic/MolLoadingPage';
 
 function ScheduleRecordsPage({
   employees,
@@ -30,15 +34,10 @@ function ScheduleRecordsPage({
   const [editMode, setEditMode] = useState(false);
   const [scheduleData, setScheduleData] = useState(scheduleEmpty);
   const [schedulesCache, setSchedulesCache] = useState({});
+
   const convertScheduleData = (shifts) => {
     let scheduleModified = {
-      Monday: [],
-      Tuesday: [],
-      Wednesday: [],
-      Thursday: [],
-      Friday: [],
-      Saturday: [],
-      Sunday: [],
+      Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: [], Sunday: [],
     };
     shifts.forEach((shift) => {
       const dayName = daysOfWeek[shift.weekday];
@@ -47,10 +46,7 @@ function ScheduleRecordsPage({
         startTime: shift.start_time.slice(0, 5),
         endTime: shift.end_time.slice(0, 5),
         minEmployees: shift.min_staff,
-        employees: shift.employees.map((emp) => ({
-          id: emp.employee_id,
-          name: emp.name,
-        })),
+        employees: shift.employees.map((emp) => ({ id: emp.employee_id, name: emp.name })),
       });
     });
     daysOfWeek.forEach((day) => {
@@ -59,7 +55,6 @@ function ScheduleRecordsPage({
         if (a.startTime > b.startTime) return 1;
         if (a.endTime < b.endTime) return -1;
         if (a.endTime > b.endTime) return 1;
-
         return 0;
       });
     });
@@ -68,44 +63,31 @@ function ScheduleRecordsPage({
 
   const formatWeekPeriod = (week) => {
     if (!week || !week.start_date) return '';
-    const [yearStartDate, monthStartDate, dayStartDate] = week.start_date.split('-').map(Number);
-    const startDate = new Date(yearStartDate, monthStartDate - 1, dayStartDate);
+    const [y, m, d] = week.start_date.split('-').map(Number);
+    const startDate = new Date(y, m - 1, d);
     const endDate = new Date(startDate.getTime() + 6 * 24 * 60 * 60 * 1000);
     const startMonth = months[startDate.getMonth()];
     const endMonth = months[endDate.getMonth()];
-
-    if (startMonth === endMonth) {
+    if (startMonth === endMonth)
       return `${startDate.getDate()}-${endDate.getDate()} ${startMonth} ${startDate.getFullYear()}`;
-    }
     return `${startDate.getDate()} ${startMonth} - ${endDate.getDate()} ${endMonth} ${startDate.getFullYear()}`;
   };
 
   useEffect(() => {
     async function generateSchedule() {
-      if (!weekRecords && currentIdxWeek != 0) {
-        navigate('/reports');
-        return;
-      }
-      if (schedulesCache[weekRecords?.id]) {
-        setScheduleData(schedulesCache[weekRecords.id]);
-        return;
-      }
+      if (!weekRecords && currentIdxWeek != 0) { navigate('/reports'); return; }
+      if (schedulesCache[weekRecords?.id]) { setScheduleData(schedulesCache[weekRecords.id]); return; }
       try {
         const response = await GeneratedScheduleApi.getGeneratedSchedule(weekRecords.id);
         if (response.data) {
           const convertedData = convertScheduleData(response.data.shifts);
           setScheduleData(convertedData);
-          setSchedulesCache((prev) => ({
-            ...prev,
-            [weekRecords.id]: convertedData,
-          }));
+          setSchedulesCache((prev) => ({ ...prev, [weekRecords.id]: convertedData }));
         }
       } catch (error) {
         console.error('Error receiving schedule:', error);
         alert('No schedule has been generated yet.');
-      } finally {
-        setIsLoading(false);
-      }
+      } finally { setIsLoading(false); }
     }
     generateSchedule();
   }, [weekRecords?.id, weeksList, navigate]);
@@ -126,9 +108,7 @@ function ScheduleRecordsPage({
     }
   };
 
-  const handleEdit = () => {
-    setEditMode(!editMode);
-  };
+  const handleEdit = () => setEditMode(!editMode);
 
   const handleShiftsSchedule = () => {
     const shiftsSchedule = { shifts: [] };
@@ -150,34 +130,22 @@ function ScheduleRecordsPage({
     try {
       const shiftsSchedule = handleShiftsSchedule();
       await GeneratedScheduleApi.deleteShiftsSchedule(weekRecords.id);
-      setSchedulesCache((prev) => ({
-        ...prev,
-        [weekRecords.id]: scheduleData,
-      }));
+      setSchedulesCache((prev) => ({ ...prev, [weekRecords.id]: scheduleData }));
       await GeneratedScheduleApi.approvedSchedule(weekRecords.id, shiftsSchedule);
       setEditMode(false);
     } catch (error) {
       console.error('Error saving schedule:', error);
       throw error;
-    } finally {
-      setIsLoading(false);
-    }
-
+    } finally { setIsLoading(false); }
     setEditMode(false);
   };
 
-  const handleBack = () => {
-    navigate('/reports');
-  };
+  const handleBack = () => navigate('/reports');
 
   const handleExportCSV = () => {
-    if (!scheduleData || !weekRecords) {
-      alert('No schedule data to export');
-      return;
-    }
+    if (!scheduleData || !weekRecords) { alert('No schedule data to export'); return; }
     try {
       exportToExcel(scheduleData, weekRecords, employees);
-      console.log('Schedule exported to CSV successfully');
     } catch (error) {
       console.error('Error exporting to CSV:', error);
       alert('Error exporting schedule to CSV. Please try again.');
@@ -188,112 +156,71 @@ function ScheduleRecordsPage({
     setIsLoading(true);
     try {
       await GeneratedScheduleApi.deleteSchedule(weekRecords.id);
-      setSchedulesCache((prev) => {
-        const updatedCache = { ...prev };
-        delete updatedCache[weekRecords.id];
-        return updatedCache;
-      });
+      setSchedulesCache((prev) => { const u = { ...prev }; delete u[weekRecords.id]; return u; });
       if (weeksList.length === 1) {
-        setWeekRecords(null);
-        setCurrentIdxWeek(0);
-        navigate('/reports');
+        setWeekRecords(null); setCurrentIdxWeek(0); navigate('/reports');
       } else {
         const newWeeksList = weeksList.filter((week) => week.id !== weekRecords.id);
         setWeeksList(newWeeksList);
-        if (currentIdxWeek === 0) {
-          setWeekRecords(newWeeksList[0]);
-        } else {
-          setWeekRecords(newWeeksList[currentIdxWeek - 1]);
-          setCurrentIdxWeek(currentIdxWeek - 1);
-        }
+        if (currentIdxWeek === 0) { setWeekRecords(newWeeksList[0]); }
+        else { setWeekRecords(newWeeksList[currentIdxWeek - 1]); setCurrentIdxWeek(currentIdxWeek - 1); }
       }
     } catch (error) {
       console.log('Error deleting schedule:', error);
       throw error;
-    } finally {
-      setEditMode(false);
-      setIsLoading(false);
-    }
+    } finally { setEditMode(false); setIsLoading(false); }
   };
 
-  if (isLoading) {
-    return (
-      <BaseLayout showSidebar={false} currentPage={8}>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-400">Loading...</p>
-          </div>
-        </div>
-      </BaseLayout>
-    );
-  }
+  const isPrevDisabled = !weeksList || weeksList.length - 1 <= currentIdxWeek;
+  const isNextDisabled = currentIdxWeek <= 0;
+
+  if (isLoading) return (
+    <BaseLayout currentPage={8} showSidebar={false}>
+      <MolLoadingPage />
+    </BaseLayout>
+  );
 
   return (
-    <BaseLayout
-      showSidebar={false}
-      showSelectionPanel={true}
-      selectionPanelData={null}
-      currentPage={8}
-    >
-      <Header title={'Schedule Records'} icon={CalendarRange}>
+    <BaseLayout showSidebar={false} showSelectionPanel={true} selectionPanelData={null} currentPage={8}>
+      <MolPageHeader title="Schedule Records" icon={CalendarRange}>
         <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 md:ml-8 w-full md:w-auto">
           <div className="flex items-center gap-2 justify-center w-full md:w-auto">
-            <button
-              onClick={previousWeek}
-              disabled={!weeksList || weeksList.length - 1 <= currentIdxWeek}
-              className={`p-2 rounded-lg text-xonter  ${
-                !weeksList || weeksList.length - 1 <= currentIdxWeek
-                  ? `opacity-50 cursor-not-allowed`
-                  : `hover:bg-slate-700`
-              }`}
-              title="Previous week"
-            >
-              <ChevronLeft size={24} className="text-slate-300" />
-            </button>
-            <div
-              className={`flex items-center gap-2 ${weekRecords ? `md:min-w-[250px] justify-center` : `justify-center`}`}
-            >
-              <span className="text-lg text-slate-200 font-medium text-center">
+            <Button onClick={previousWeek} variant="periodNav" disabled={isPrevDisabled} title="Previous week">
+              <ChevronLeft className='text-slate-400' />
+            </Button>
+            <div className={`flex items-center gap-2 ${weekRecords ? 'md:min-w-[250px] justify-center' : 'justify-center'}`}>
+              <AtmText size="lg" weight="medium" color="muted" className="text-center">
                 {formatWeekPeriod(weekRecords)}
-              </span>
+              </AtmText>
             </div>
-            <button
-              onClick={nextWeek}
-              disabled={currentIdxWeek <= 0}
-              className={`p-2 rounded-lg ${
-                currentIdxWeek <= 0 ? `opacity-50 cursor-not-allowed` : `hover:bg-slate-700`
-              }`}
-              title="Next month"
-            >
-              <ChevronRight size={24} className="text-slate-300" />
-            </button>
+            <Button onClick={nextWeek} variant="periodNav" disabled={isNextDisabled} title="Next week">
+              <ChevronRight className='text-slate-400' />
+            </Button>
           </div>
-          <div className="text-sm text-slate-400 md:ml-4">
-            {weeksList && weeksList.length > 0
-              ? `Week ${currentIdxWeek + 1} of ${weeksList.length}`
-              : ``}
-          </div>
+          <AtmText size="sm" color="muted" className="md:ml-4">
+            {weeksList && weeksList.length > 0 ? `Week ${currentIdxWeek + 1} of ${weeksList.length}` : ''}
+          </AtmText>
         </div>
-      </Header>
+      </MolPageHeader>
+
       <div>
         {!weeksList || weeksList.length <= 0 ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
-              <p className="text-slate-400 text-lg">No weekly schedule created</p>
+              <AtmText as="p" size="lg" color="muted">No weekly schedule created</AtmText>
             </div>
           </div>
         ) : (
           <>
             {editMode && (
               <div className="flex mb-2 p-2 bg-yellow-900/20 border border-yellow-700 rounded-lg">
-                <AlertTriangle className="w-5 h-5 text-yellow-200" />
-                <p className="px-2.5 text-yellow-200 text-sm">
+                <AlertTriangle size={24} className="text-yellow-400" />
+                <AtmText as="p" size="sm" color="yellow" className="px-2.5">
                   Editing mode is active. Remember to save your changes.
-                </p>
+                </AtmText>
               </div>
             )}
-            <ScheduleTable
+            <ObjScheduleTable
               scheduleData={scheduleData}
               setScheduleData={setScheduleData}
               employeeList={employees}
@@ -302,38 +229,24 @@ function ScheduleRecordsPage({
             />
           </>
         )}
+
         {!editMode ? (
           <div className="flex flex-col-reverse sm:flex-row mt-4 gap-3 sm:gap-0">
             <div className="flex-1 justify-center sm:justify-start flex w-full sm:w-auto">
-              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5 rounded text-center font-medium">
-                <button
-                  onClick={handleBack}
-                  className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Back
-                </button>
+              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5">
+                <Button onClick={handleBack} responsive variant='primary' size='lg'>Back</Button>
               </div>
             </div>
-
             {weeksList && weeksList.length > 0 && (
               <div className="justify-end flex flex-col sm:flex-row flex-1 gap-2 w-full sm:w-auto">
-                <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5 rounded text-center font-medium">
-                  <button
-                    onClick={handleExportCSV}
-                    className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium sm:w-auto whitespace-nowrap"
-                    title="Export schedule to CSV"
-                  >
+                <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5">
+                  <Button onClick={handleExportCSV} responsive variant='success' size='lg'>
                     <FileSpreadsheet size={20} />
                     Export CSV
-                  </button>
+                  </Button>
                 </div>
-                <div className="w-full sm:w-auto px-0 sm:px-1 py-1.5 rounded text-center font-medium">
-                  <button
-                    onClick={handleEdit}
-                    className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium sm:w-auto sm:ml-auto"
-                  >
-                    {`Edit`}
-                  </button>
+                <div className="w-full sm:w-auto px-0 sm:px-1 py-1.5">
+                  <Button onClick={handleEdit} responsive variant='primary' size='lg'>Edit</Button>
                 </div>
               </div>
             )}
@@ -341,23 +254,13 @@ function ScheduleRecordsPage({
         ) : (
           <div className="flex flex-col-reverse sm:flex-row mt-4 gap-3 sm:gap-0">
             <div className="justify-center sm:justify-start flex flex-1 w-full sm:w-auto">
-              <div className="w-full sm:w-auto px-0 sm:px-5 py-1.5 rounded text-center font-medium">
-                <button
-                  onClick={handleDeleteSchedule}
-                  className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-                >
-                  {`Delete`}
-                </button>
+              <div className="w-full sm:w-auto px-0 sm:px-5 py-1.5">
+                <Button onClick={handleDeleteSchedule} responsive variant='danger' size='lg'>Delete</Button>
               </div>
             </div>
             <div className="justify-center sm:justify-end flex w-full sm:w-auto">
-              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5 rounded text-center font-medium">
-                <button
-                  onClick={handleSave}
-                  className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  {`Save`}
-                </button>
+              <div className="w-full sm:w-auto px-0 sm:px-2 py-1.5">
+                <Button onClick={handleSave} responsive variant='primary' size='lg'>Save</Button>
               </div>
             </div>
           </div>

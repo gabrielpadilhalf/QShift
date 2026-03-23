@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, ChevronLeft, ChevronRight, ArrowRight, ArrowLeft } from 'lucide-react';
-import BaseLayout from '../layouts/BaseLayout';
-import CalendarTable from '../components/CalendarTable';
-import Header from '../components/Header';
+import { ObjAppLayout as BaseLayout } from '../atomic/ObjAppLayout';
+import { MolPageHeader } from '../atomic/MolPageHeader';
+import { ObjCalendarTable } from '../atomic/ObjCalendarTable';
+import { Button } from '../atomic/AtmButton/index.js';
+import { AtmText } from '../atomic/AtmText/index.js';
 import { CalendarApi } from '../services/api.js';
 import { months } from '../constants/constantsOfTable.js';
+import { MolLoadingPage } from '../atomic/MolLoadingPage';
 
 function CalendarPage({
   currentMonth,
@@ -24,6 +27,7 @@ function CalendarPage({
 }) {
   const navigate = useNavigate();
   const [generatedWeeks, setGeneratedWeeks] = useState([]);
+
   useEffect(() => {
     if (employees.length === 0) {
       navigate('/staff');
@@ -67,9 +71,7 @@ function CalendarPage({
   };
 
   const toggleDay = (date, isSelectedWeek) => {
-    if (isSelectedWeek === false) {
-      return;
-    }
+    if (isSelectedWeek === false) return;
     const dateStr = date.toISOString().split('T')[0];
     setSelectedDays((prev) => {
       if (prev.some((d) => d.toISOString().split('T')[0] === dateStr)) {
@@ -90,63 +92,34 @@ function CalendarPage({
   };
 
   const handleAdvance = () => {
-    if (selectedWeek && selectedDays.length > 0) {
-      navigate('/shift-config');
-    }
+    if (selectedWeek && selectedDays.length > 0) navigate('/shift-config');
   };
 
-  const handleBack = () => {
-    navigate('/staff');
-  };
+  const handleBack = () => navigate('/staff');
 
-  if (isLoading) {
-    return (
-      <BaseLayout showSidebar={false} currentPage={2}>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-400">Loading...</p>
-          </div>
-        </div>
-      </BaseLayout>
-    );
-  }
+  if (isLoading) return (
+    <BaseLayout currentPage={2} showSidebar={false}>
+      <MolLoadingPage />
+    </BaseLayout>
+  );
 
   return (
-    <BaseLayout
-      showSidebar={true}
-      showSelectionPanel={true}
-      selectionPanelData={{
-        startDate,
-        selectedDays,
-      }}
-      currentPage={2}
-    >
-      <Header title="Calendar" icon={Calendar}>
+    <BaseLayout showSidebar={true} showSelectionPanel={true} selectionPanelData={{ startDate, selectedDays }} currentPage={2}>
+      <MolPageHeader title="Calendar" icon={Calendar}>
         <div className="flex items-center gap-4">
-          <button
-            onClick={handlePrevMonth}
-            className="p-2 rounded-lg hover:bg-slate-700 transition-colors"
-            title="Previous month"
-          >
-            <ChevronLeft size={24} className="text-slate-300" />
-          </button>
-
-          <span className="text-xl text-slate-200 font-medium min-w-[200px] text-center">
+          <Button onClick={handlePrevMonth} variant="periodNav" title="Previous month">
+            <ChevronLeft size={24} className="text-white" />
+          </Button>
+          <AtmText as="span" size="xl" weight="medium" color="white" className="min-w-[200px] text-center">
             {months[currentMonth - 1]} {currentYear}
-          </span>
-
-          <button
-            onClick={handleNextMonth}
-            className="p-2 rounded-lg hover:bg-slate-700 transition-colors"
-            title="Next month"
-          >
-            <ChevronRight size={24} className="text-slate-300" />
-          </button>
+          </AtmText>
+          <Button onClick={handleNextMonth} variant="periodNav" title="Next month">
+            <ChevronRight size={24} className="text-white" />
+          </Button>
         </div>
-      </Header>
+      </MolPageHeader>
 
-      <CalendarTable
+      <ObjCalendarTable
         currentMonth={currentMonth}
         currentYear={currentYear}
         selectedDays={selectedDays}
@@ -155,22 +128,16 @@ function CalendarPage({
         onToggleWeek={toggleWeek}
         generatedWeeks={generatedWeeks}
       />
-      <div className="flex gap-4 mt-4">
-        <button
-          onClick={handleBack}
-          className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium w-full sm:w-auto"
-        >
-          <ArrowLeft size={20} />
-          Back
-        </button>
 
-        <button
-          onClick={handleAdvance}
-          className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium w-full sm:w-auto sm:ml-auto"
-        >
+      <div className="flex gap-4 mt-4">
+        <Button onClick={handleBack} responsive variant='primary' size='lg'>
+          <ArrowLeft size={24} className="text-white" />
+          Back
+        </Button>
+        <Button onClick={handleAdvance} responsive className="sm:ml-auto" variant='primary' size='lg'>
           Next
-          <ArrowRight size={20} />
-        </button>
+          <ArrowRight size={24} className="text-white" />
+        </Button>
       </div>
     </BaseLayout>
   );
