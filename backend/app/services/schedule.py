@@ -10,7 +10,6 @@ from ortools.sat.python import cp_model
 
 import app.schemas.schedule as schemas
 import app.domain.shift as shift_domain
-from app.core.config import settings
 from app.core.logging import logger
 
 
@@ -65,6 +64,8 @@ def build_schedule_generation_payload(
 def dispatch_schedule_generation_job(
     dispatch_request: schemas.ScheduleGenerationDispatchRequest,
 ) -> None:
+    from app.core.config import settings
+
     base_url = settings.SCHEDULE_GENERATOR_BASE_URL.rstrip("/")
     url = f"{base_url}/internal/generate-schedule"
     payload = dispatch_request.model_dump(mode="json")
@@ -208,7 +209,7 @@ class ScheduleGenerator:
         employee_ids, employee_names = cls._get_employees_for_user(
             db=db, user_id=user_id
         )
-        shift_ids = cls._get_shift_ids(db=db, shift_vector=shift_vector)
+        shift_ids = cls._get_shift_ids(shift_vector=shift_vector)
         return cls(
             shift_ids=shift_ids,
             employee_ids=employee_ids,
@@ -220,7 +221,31 @@ class ScheduleGenerator:
         )
 
     @classmethod
-    def _get_shift_ids(cls, db: Session, shift_vector: List[shift_domain.Shift]) -> List[UUID]:
+    def from_payload(
+        cls,
+        *,
+        payload: schemas.ScheduleGenerationDispatchPayload,
+    ):
+        shift_vector = [
+            shift_domain.Shift(**shift.model_dump())
+            for shift in payload.shift_vector
+        ]
+        employee_ids = [employee.id for employee in payload.employees]
+        employee_names = [employee.name for employee in payload.employees]
+        return cls(
+            shift_ids=cls._get_shift_ids(shift_vector=shift_vector),
+            employee_ids=employee_ids,
+            employee_names=employee_names,
+            shift_vector=shift_vector,
+            availability_matrix=cls._build_availability_matrix_from_payload(
+                shift_vector=shift_vector,
+                employee_ids=employee_ids,
+                availabilities=payload.availabilities,
+            ),
+        )
+
+    @classmethod
+    def _get_shift_ids(cls, shift_vector: List[shift_domain.Shift]) -> List[UUID]:
         shift_ids = []
         for shift in shift_vector:
             shift_ids.append(shift.id)
@@ -261,6 +286,35 @@ class ScheduleGenerator:
                     .all()
                 )
                 for availability in availabilities:
+                    if (
+                        availability.weekday == shift.weekday
+                        and availability.start_time <= shift.start_time
+                        and availability.end_time >= shift.end_time
+                    ):
+                        availability_matrix[j][i] = True
+                        break
+        return availability_matrix
+
+    @classmethod
+    def _build_availability_matrix_from_payload(
+        cls,
+        *,
+        shift_vector: List[shift_domain.Shift],
+        employee_ids: List[UUID],
+        availabilities: List[schemas.ScheduleGenerationAvailabilityOut],
+    ) -> List[List[bool]]:
+        availability_matrix = [
+            [False] * len(shift_vector) for _ in range(len(employee_ids))
+        ]
+        availabilities_by_employee = {}
+        for availability in availabilities:
+            availabilities_by_employee.setdefault(availability.employee_id, []).append(
+                availability
+            )
+
+        for i, shift in enumerate(shift_vector):
+            for j, employee_id in enumerate(employee_ids):
+                for availability in availabilities_by_employee.get(employee_id, []):
                     if (
                         availability.weekday == shift.weekday
                         and availability.start_time <= shift.start_time
