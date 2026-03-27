@@ -1,11 +1,113 @@
+import json
+from datetime import datetime, time, timezone
+from sqlalchemy import false
 from sqlalchemy.orm import Session
 from typing import List, Tuple
 from uuid import UUID
-from datetime import time
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from ortools.sat.python import cp_model
 
 import app.schemas.schedule as schemas
 import app.domain.shift as shift_domain
+from app.core.config import settings
+from app.core.logging import logger
+
+
+def build_schedule_generation_payload(
+    *,
+    db: Session,
+    user_id: UUID,
+    shift_vector: List[schemas.PreviewShiftBase],
+) -> schemas.ScheduleGenerationDispatchPayload:
+    from app.models import Availability, Employee
+
+    employees = (
+        db.query(Employee)
+        .filter(Employee.user_id == user_id, Employee.active == True)
+        .order_by(Employee.name.asc(), Employee.id.asc())
+        .all()
+    )
+    employee_ids = [employee.id for employee in employees]
+    availabilities = (
+        db.query(Availability)
+        .filter(
+            Availability.user_id == user_id,
+            Availability.employee_id.in_(employee_ids) if employee_ids else false(),
+        )
+        .order_by(
+            Availability.employee_id.asc(),
+            Availability.weekday.asc(),
+            Availability.start_time.asc(),
+            Availability.end_time.asc(),
+        )
+        .all()
+    )
+
+    return schemas.ScheduleGenerationDispatchPayload(
+        shift_vector=shift_vector,
+        employees=[
+            schemas.ScheduleGenerationEmployeeOut(id=employee.id, name=employee.name)
+            for employee in employees
+        ],
+        availabilities=[
+            schemas.ScheduleGenerationAvailabilityOut(
+                employee_id=availability.employee_id,
+                weekday=availability.weekday,
+                start_time=availability.start_time,
+                end_time=availability.end_time,
+            )
+            for availability in availabilities
+        ],
+    )
+
+
+def dispatch_schedule_generation_job(
+    dispatch_request: schemas.ScheduleGenerationDispatchRequest,
+) -> None:
+    base_url = settings.SCHEDULE_GENERATOR_BASE_URL.rstrip("/")
+    url = f"{base_url}/internal/generate-schedule"
+    payload = dispatch_request.model_dump(mode="json")
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib_request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(
+            request,
+            timeout=settings.SCHEDULE_GENERATOR_TIMEOUT_SECONDS,
+        ) as response:
+            status_code = getattr(response, "status", response.getcode())
+            if status_code >= 400:
+                raise RuntimeError(
+                    f"schedule generator returned unexpected status {status_code}"
+                )
+    except (urllib_error.URLError, urllib_error.HTTPError, TimeoutError, OSError) as exc:
+        logger.error("Schedule generation dispatch failed for job %s: %s", dispatch_request.job_id, exc)
+        raise RuntimeError("unable to dispatch schedule generation job") from exc
+
+
+def build_schedule_generation_job_schema(
+    job,
+) -> schemas.ScheduleGenerationJobOut:
+    result = None
+    if job.result_payload is not None:
+        result = schemas.SchedulePreviewOut.model_validate(job.result_payload)
+
+    return schemas.ScheduleGenerationJobOut(
+        job_id=job.id,
+        status=schemas.ScheduleGenerationJobStatus(job.status),
+        result=result,
+        error=job.error_message,
+    )
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def build_schedule_schema_from_db(week_id: UUID, user_id: UUID, db: Session):

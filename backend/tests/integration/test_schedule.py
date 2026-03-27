@@ -1,5 +1,20 @@
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
+
+import app.services.schedule as schedule_service
+
+
+def _normalize_preview_shift_vector(shifts):
+    return [
+        {
+            "id": shift["id"],
+            "weekday": shift["weekday"],
+            "start_time": shift["start_time"],
+            "end_time": shift["end_time"],
+            "min_staff": shift["min_staff"],
+        }
+        for shift in shifts
+    ]
 
 
 @pytest.mark.integration
@@ -163,36 +178,59 @@ def test_read_schedule_structure(client: TestClient, seeded_data):
 
 
 @pytest.mark.integration
-def test_preview_schedule_feasible(client: TestClient, seeded_data):
-    """Should generate feasible schedule preview."""
+def test_preview_schedule_creates_processing_job_and_dispatches_payload(
+    client: TestClient,
+    seeded_data,
+    dispatched_schedule_jobs,
+):
+    """Should create a processing job and dispatch the complete generation payload."""
     week_id = seeded_data["week_id"]
     shifts = client.get(f"/api/v1/weeks/{week_id}/shifts").json()
-    response = client.post(
-        "/api/v1/preview-schedule",
-        json={"shift_vector": shifts}
-    )
+    employees = client.get("/api/v1/employees").json()
 
-    assert response.status_code == 200
+    response = client.post("/api/v1/preview-schedule", json={"shift_vector": shifts})
+
+    assert response.status_code == 202
     data = response.json()
-    assert "possible" in data
-    assert "schedule" in data
-    assert data["possible"] is True
-    assert data["schedule"] is not None
-    assert len(data["schedule"]["shifts"]) > 0
+    assert "job_id" in data
+    assert data["status"] == "processing"
+    assert len(dispatched_schedule_jobs) == 1
+
+    dispatch_request = dispatched_schedule_jobs[0]
+    assert str(dispatch_request.job_id) == data["job_id"]
+    assert (
+        dispatch_request.payload.model_dump(mode="json")["shift_vector"]
+        == _normalize_preview_shift_vector(shifts)
+    )
+    assert len(dispatch_request.payload.employees) == len(employees)
+    assert len(dispatch_request.payload.availabilities) > 0
+
+    job_response = client.get(f"/api/v1/schedule-generation-jobs/{data['job_id']}")
+    assert job_response.status_code == 200
+    assert job_response.json() == {
+        "job_id": data["job_id"],
+        "status": "processing",
+        "result": None,
+        "error": None,
+    }
 
 
 @pytest.mark.integration
-def test_preview_schedule_does_not_persist(client: TestClient, seeded_data):
-    """Should not persist preview schedule to database."""
+def test_preview_schedule_does_not_persist_assignments(
+    client: TestClient,
+    seeded_data,
+    dispatched_schedule_jobs,
+):
+    """Should create only a preview job and keep persisted schedule empty."""
     week_id = seeded_data["week_id"]
-
     shifts = client.get(f"/api/v1/weeks/{week_id}/shifts").json()
+
     preview_response = client.post(
         "/api/v1/preview-schedule",
-        json={"shift_vector": shifts}
+        json={"shift_vector": shifts},
     )
-    assert preview_response.status_code == 200
-    assert preview_response.json()["possible"] is True
+    assert preview_response.status_code == 202
+    assert len(dispatched_schedule_jobs) == 1
 
     schedule_response = client.get(f"/api/v1/weeks/{week_id}/schedule")
     assert schedule_response.status_code == 200
@@ -203,129 +241,93 @@ def test_preview_schedule_does_not_persist(client: TestClient, seeded_data):
 
 
 @pytest.mark.integration
-def test_preview_schedule_no_employees(client: TestClient):
-    """Should return not possible when no employees exist."""
+def test_preview_schedule_dispatches_empty_employee_list_when_none_exist(
+    client: TestClient,
+    dispatched_schedule_jobs,
+):
+    """Should dispatch a job with no employees when the user has none."""
     client.post("/api/v1/dev/seed")
     employees = client.get("/api/v1/employees").json()
-    for emp in employees:
-        client.delete(f"/api/v1/employees/{emp['id']}")
+    for employee in employees:
+        client.delete(f"/api/v1/employees/{employee['id']}")
 
     weeks = client.get("/api/v1/weeks").json()
     week_id = weeks[0]["id"]
-
     shifts = client.get(f"/api/v1/weeks/{week_id}/shifts").json()
-    response = client.post(
-        "/api/v1/preview-schedule",
-        json={"shift_vector": shifts}
-    )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["possible"] is False
-    assert data["schedule"] is None
+    response = client.post("/api/v1/preview-schedule", json={"shift_vector": shifts})
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "processing"
+    assert len(dispatched_schedule_jobs[0].payload.employees) == 0
+    assert len(dispatched_schedule_jobs[0].payload.availabilities) == 0
 
 
 @pytest.mark.integration
-def test_preview_schedule_no_availabilities(client: TestClient):
-    """Should return not possible when no availabilities exist."""
+def test_preview_schedule_dispatches_empty_availabilities_when_none_exist(
+    client: TestClient,
+    dispatched_schedule_jobs,
+):
+    """Should dispatch a job with no availabilities when the user has none."""
     client.post("/api/v1/dev/seed")
     employees = client.get("/api/v1/employees").json()
-    for emp in employees:
+    for employee in employees:
         availabilities = client.get(
-            f"/api/v1/employees/{emp['id']}/availabilities"
+            f"/api/v1/employees/{employee['id']}/availabilities"
         ).json()
-        for avail in availabilities:
+        for availability in availabilities:
             client.delete(
-                f"/api/v1/employees/{emp['id']}/availabilities/{avail['id']}"
+                f"/api/v1/employees/{employee['id']}/availabilities/{availability['id']}"
             )
 
     weeks = client.get("/api/v1/weeks").json()
     week_id = weeks[0]["id"]
-
     shifts = client.get(f"/api/v1/weeks/{week_id}/shifts").json()
-    response = client.post(
-        "/api/v1/preview-schedule",
-        json={"shift_vector": shifts}
-    )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["possible"] is False
-    assert data["schedule"] is None
+    response = client.post("/api/v1/preview-schedule", json={"shift_vector": shifts})
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "processing"
+    assert len(dispatched_schedule_jobs[0].payload.availabilities) == 0
 
 
 @pytest.mark.integration
-def test_preview_schedule_structure(client: TestClient, seeded_data):
-    """Should return preview with correct structure."""
-    week_id = seeded_data["week_id"]
-    shifts = client.get(f"/api/v1/weeks/{week_id}/shifts").json()
-    response = client.post(
-        "/api/v1/preview-schedule",
-        json={"shift_vector": shifts}
+def test_read_schedule_generation_job_not_found(client: TestClient):
+    """Should return 404 when the schedule generation job does not exist."""
+    response = client.get(
+        "/api/v1/schedule-generation-jobs/00000000-0000-0000-0000-000000000999"
     )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert "possible" in data
-    assert "schedule" in data
-
-    if data["possible"]:
-        schedule = data["schedule"]
-        assert "shifts" in schedule
-
-        for shift in schedule["shifts"]:
-            assert "weekday" in shift
-            assert "start_time" in shift
-            assert "end_time" in shift
-            assert "min_staff" in shift
-            assert "employees" in shift
-
-            for employee in shift["employees"]:
-                assert "employee_id" in employee
-                assert "name" in employee
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Schedule generation job not found"
 
 
 @pytest.mark.integration
-def test_preview_schedule_respects_availabilities(client: TestClient, seeded_data):
-    """Should only assign employees to shifts they are available for."""
+def test_preview_schedule_marks_job_failed_when_dispatch_fails(
+    client: TestClient,
+    seeded_data,
+    monkeypatch,
+):
+    """Should mark the job as failed when dispatching to the generator fails."""
     week_id = seeded_data["week_id"]
     shifts = client.get(f"/api/v1/weeks/{week_id}/shifts").json()
-    
-    response = client.post(
-        "/api/v1/preview-schedule",
-        json={"shift_vector": shifts}
+
+    def failing_dispatch(_dispatch_request):
+        raise RuntimeError("unable to dispatch schedule generation job")
+
+    monkeypatch.setattr(
+        schedule_service,
+        "dispatch_schedule_generation_job",
+        failing_dispatch,
     )
 
-    assert response.status_code == 200
+    response = client.post("/api/v1/preview-schedule", json={"shift_vector": shifts})
+
+    assert response.status_code == 202
     data = response.json()
+    assert data["status"] == "failed"
 
-    if data["possible"]:
-        schedule = data["schedule"]
-        
-        # Iterate by index to match result with original shifts
-        for i, schedule_shift in enumerate(schedule["shifts"]):
-            shift = shifts[i]
-
-            # Verify that the shift at this index actually matches the input shift's definition
-            # This ensures that relying on index order is safe/correct
-            assert schedule_shift["weekday"] == shift["weekday"]
-            assert schedule_shift["start_time"] == shift["start_time"]
-            assert schedule_shift["end_time"] == shift["end_time"]
-            assert schedule_shift["min_staff"] == shift["min_staff"]
-
-            for employee in schedule_shift["employees"]:
-                availabilities = client.get(
-                    f"/api/v1/employees/{employee['employee_id']}/availabilities"
-                ).json()
-
-                has_availability = any(
-                    avail["weekday"] == shift["weekday"]
-                    and avail["start_time"] <= shift["start_time"]
-                    and avail["end_time"] >= shift["end_time"]
-                    for avail in availabilities
-                )
-                assert has_availability, (
-                    f"Employee {employee['name']} assigned to shift "
-                    f"without proper availability"
-                )
-
+    job_response = client.get(f"/api/v1/schedule-generation-jobs/{data['job_id']}")
+    assert job_response.status_code == 200
+    assert job_response.json()["status"] == "failed"
+    assert job_response.json()["error"] == "unable to dispatch schedule generation job"

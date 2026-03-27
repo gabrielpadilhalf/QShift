@@ -25,3 +25,6 @@ class User(Base):
     weeks: Mapped[list["Week"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    schedule_generation_jobs: Mapped[list["ScheduleGenerationJob"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )

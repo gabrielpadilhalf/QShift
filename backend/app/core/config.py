@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 100
     JWT_ALGORITHM: str = "HS256"
+    SCHEDULE_GENERATOR_BASE_URL: str = "http://localhost:8001"
+    SCHEDULE_GENERATOR_TIMEOUT_SECONDS: float = 10.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -1,16 +1,13 @@
 from uuid import UUID
 from fastapi import APIRouter, status, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
 import app.schemas.schedule as schemas
 import app.services.schedule as schedule_service
-from app.models import ShiftAssignment, Employee, Week
+from app.models import ShiftAssignment, Employee, ScheduleGenerationJob, Week
 from app.models.shift import Shift
 from app.api.dependencies import current_user_id
 from app.core.db import get_session
-from app.services.schedule import ScheduleGenerator
-import app.domain.shift as shift_domain
 
 router = APIRouter(prefix="", tags=["schedule"])
 
@@ -85,28 +82,76 @@ def delete_schedule(
 # GENERATE PREVIEW SCHEDULE
 @router.post(
     "/preview-schedule",
-    response_model=schemas.SchedulePreviewOut,
-    status_code=status.HTTP_200_OK,
+    response_model=schemas.ScheduleGenerationJobAcceptedOut,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def generate_preview_schedule(
     payload: schemas.ShiftVectorIn,
     user_id: UUID = Depends(current_user_id),
     db: Session = Depends(get_session),
 ):
-
-    shift_vector = [
-        shift_domain.Shift(**s.model_dump())
-        for s in payload.shift_vector
-    ]
-
-    schedule_generator = ScheduleGenerator.from_db(
-        db=db, user_id=user_id, shift_vector=shift_vector
+    dispatch_payload = schedule_service.build_schedule_generation_payload(
+        db=db,
+        user_id=user_id,
+        shift_vector=payload.shift_vector,
     )
-    possible = schedule_generator.check_possibility()
+    dispatch_request = schemas.ScheduleGenerationDispatchRequest(
+        job_id=UUID(int=0),
+        payload=dispatch_payload,
+    )
+    job = ScheduleGenerationJob(
+        user_id=user_id,
+        status=schemas.ScheduleGenerationJobStatus.PENDING.value,
+        request_payload={},
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
 
-    if possible:
-        schedule_out = schedule_generator.generate_schedule()
+    dispatch_request = dispatch_request.model_copy(update={"job_id": job.id})
+    job.request_payload = dispatch_request.model_dump(mode="json")
+
+    try:
+        schedule_service.dispatch_schedule_generation_job(dispatch_request)
+    except RuntimeError as exc:
+        job.status = schemas.ScheduleGenerationJobStatus.FAILED.value
+        job.error_message = str(exc)
+        job.finished_at = schedule_service.utcnow()
     else:
-        schedule_out = None
+        job.status = schemas.ScheduleGenerationJobStatus.PROCESSING.value
+        job.error_message = None
 
-    return schemas.SchedulePreviewOut(possible=possible, schedule=schedule_out)
+    db.add(job)
+    db.commit()
+
+    return schemas.ScheduleGenerationJobAcceptedOut(
+        job_id=job.id,
+        status=schemas.ScheduleGenerationJobStatus(job.status),
+    )
+
+
+@router.get(
+    "/schedule-generation-jobs/{job_id}",
+    response_model=schemas.ScheduleGenerationJobOut,
+    status_code=status.HTTP_200_OK,
+)
+def read_schedule_generation_job(
+    job_id: UUID,
+    user_id: UUID = Depends(current_user_id),
+    db: Session = Depends(get_session),
+):
+    job = (
+        db.query(ScheduleGenerationJob)
+        .filter(
+            ScheduleGenerationJob.id == job_id,
+            ScheduleGenerationJob.user_id == user_id,
+        )
+        .first()
+    )
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Schedule generation job not found",
+        )
+
+    return schedule_service.build_schedule_generation_job_schema(job)

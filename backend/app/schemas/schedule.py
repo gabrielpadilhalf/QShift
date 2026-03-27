@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 import app.core.constants as constants
 from typing import Optional
 from app.schemas.shift import PreviewShiftBase
+from enum import Enum
 
 class ScheduleOut(BaseModel):
     shifts: List[ScheduleShiftOut]
@@ -52,3 +53,49 @@ class PreviewScheduleShiftOut(ScheduleShiftOutBase):
 
 class ShiftVectorIn(BaseModel):
     shift_vector: List[PreviewShiftBase]
+
+
+class ScheduleGenerationJobStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class ScheduleGenerationEmployeeOut(BaseModel):
+    id: uuid.UUID
+    name: str = Field(
+        ...,
+        max_length=constants.MAX_EMPLOYEE_NAME_LENGTH,
+        description="Employee's name",
+    )
+
+
+class ScheduleGenerationAvailabilityOut(BaseModel):
+    employee_id: uuid.UUID
+    weekday: int = Field(..., ge=0, le=6)
+    start_time: time
+    end_time: time
+
+
+class ScheduleGenerationDispatchPayload(BaseModel):
+    shift_vector: List[PreviewShiftBase]
+    employees: List[ScheduleGenerationEmployeeOut]
+    availabilities: List[ScheduleGenerationAvailabilityOut]
+
+
+class ScheduleGenerationDispatchRequest(BaseModel):
+    job_id: uuid.UUID
+    payload: ScheduleGenerationDispatchPayload
+
+
+class ScheduleGenerationJobAcceptedOut(BaseModel):
+    job_id: uuid.UUID
+    status: ScheduleGenerationJobStatus
+
+
+class ScheduleGenerationJobOut(BaseModel):
+    job_id: uuid.UUID
+    status: ScheduleGenerationJobStatus
+    result: Optional[SchedulePreviewOut] = None
+    error: Optional[str] = None
