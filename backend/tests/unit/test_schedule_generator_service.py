@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 
 import app.schemas.schedule as schemas
 from schedule_generator.main import app
-from schedule_generator import service as generator_service
-from schedule_generator.solver import ScheduleGenerator
+from schedule_generator.domain.solver import ScheduleGenerator
+from schedule_generator.services import generator as generator_service
 
 
 def _build_dispatch_request():

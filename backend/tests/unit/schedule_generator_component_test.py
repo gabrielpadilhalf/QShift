@@ -8,7 +8,7 @@ import pytest
 
 from app.domain import shift as shift_domain
 import app.schemas.schedule as schemas
-from schedule_generator.solver import ScheduleGenerator
+from schedule_generator.domain.solver import ScheduleGenerator
 
 
 # -----------------------------
