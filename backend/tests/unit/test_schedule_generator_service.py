@@ -4,9 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.schemas.schedule as schemas
-from app.services.schedule import ScheduleGenerator
 from schedule_generator.main import app
 from schedule_generator import service as generator_service
+from schedule_generator.solver import ScheduleGenerator
 
 
 def _build_dispatch_request():
