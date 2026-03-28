@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from app.main import app
-from app.api.dependencies import current_user_id
-from app.core.constants import DEMO_USER_ID
-import app.services.schedule as schedule_service
+from core_api.main import app
+from core_api.api.dependencies import current_user_id
+from core_api.core.constants import DEMO_USER_ID
+import core_api.services.schedule as schedule_service
 
 API_PREFIX = "/api/v1"
 

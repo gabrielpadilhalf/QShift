@@ -6,9 +6,9 @@ from typing import List, Tuple
 
 import pytest
 
-from app.domain import shift as shift_domain
-import app.schemas.schedule as schemas
-from schedule_generator.domain.solver import ScheduleGenerator
+from core_api.domain import shift as shift_domain
+import core_api.schemas.schedule as schemas
+from schedule_generator_api.domain.solver import ScheduleGenerator
 
 
 # -----------------------------

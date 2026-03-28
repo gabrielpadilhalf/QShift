@@ -4,8 +4,8 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-import app.services.schedule as schedule_service
-from app.core.config import settings
+import core_api.services.schedule as schedule_service
+from core_api.core.config import settings
 
 
 def _normalize_preview_shift_vector(shifts):
