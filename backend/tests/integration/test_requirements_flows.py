@@ -1,6 +1,20 @@
 from fastapi.testclient import TestClient
 import pytest
 
+
+def _normalize_preview_shift_vector(shifts):
+    return [
+        {
+            "id": shift["id"],
+            "weekday": shift["weekday"],
+            "start_time": shift["start_time"],
+            "end_time": shift["end_time"],
+            "min_staff": shift["min_staff"],
+        }
+        for shift in shifts
+    ]
+
+
 @pytest.mark.integration
 def test_rf001_register_availability_flow(client: TestClient, seeded_data):
     """
@@ -54,7 +68,7 @@ def test_rf001_register_availability_flow(client: TestClient, seeded_data):
 
 
 @pytest.mark.integration
-def test_rf005_generate_schedule_flow(client: TestClient):
+def test_rf005_generate_schedule_flow(client: TestClient, dispatched_schedule_jobs):
     """
     RF005: Gerar automaticamente escalas semanais.
     
@@ -63,9 +77,9 @@ def test_rf005_generate_schedule_flow(client: TestClient):
     2. Registrar disponibilidades
     3. Criar semana (RF002 - dias de funcionamento)
     4. Criar turnos (RF003 - horários, RF004 - quantidade mínima)
-    5. Gerar escala automaticamente
-    6. Verificar que a escala foi gerada corretamente
-    7. Salvar escala e verificar persistência (NF001, NF002)
+    5. Criar job assíncrono de geração
+    6. Verificar que o payload enviado ao gerador está correto
+    7. Consultar o status do job criado
     """
     client.post("/api/v1/dev/seed")
 
@@ -93,87 +107,41 @@ def test_rf005_generate_schedule_flow(client: TestClient):
         "/api/v1/preview-schedule",
         json={"shift_vector": shifts}
     )
-    assert preview_response.status_code == 200
+    assert preview_response.status_code == 202
 
     preview_data = preview_response.json()
-    assert preview_data["possible"] is True
-    assert preview_data["schedule"] is not None
+    assert preview_data["status"] == "processing"
+    assert "job_id" in preview_data
 
-    schedule = preview_data["schedule"]
-    assert "shifts" in schedule
-    assert len(schedule["shifts"]) > 0
-
-    shifts_with_employees = 0
-    # Map back using index since preview shifts don't have shift_id
-    schedule_payload_shifts = []
-
-    for i, schedule_shift in enumerate(schedule["shifts"]):
-        # Removed "shift_id" assertion as it's no longer in preview output
-        assert "weekday" in schedule_shift
-        assert "start_time" in schedule_shift
-        assert "end_time" in schedule_shift
-        assert "min_staff" in schedule_shift
-        assert "employees" in schedule_shift
-        
-        if len(schedule_shift["employees"]) > 0:
-            shifts_with_employees += 1
-            original_shift_id = shifts[i]["id"]
-            schedule_payload_shifts.append({
-                "shift_id": original_shift_id,
-                "employee_ids": [e["employee_id"] for e in schedule_shift["employees"]],
-            })
-
-    assert shifts_with_employees > 0
-
-    schedule_payload = {
-        "shifts": schedule_payload_shifts
-    }
-
-    save_response = client.post(
-        f"/api/v1/weeks/{week_id}/schedule",
-        json=schedule_payload,
+    assert len(dispatched_schedule_jobs) == 1
+    dispatch_request = dispatched_schedule_jobs[0]
+    assert str(dispatch_request.job_id) == preview_data["job_id"]
+    assert (
+        dispatch_request.payload.model_dump(mode="json")["shift_vector"]
+        == _normalize_preview_shift_vector(shifts)
     )
-    assert save_response.status_code == 201
+    assert len(dispatch_request.payload.employees) == len(employees)
+    assert len(dispatch_request.payload.availabilities) > 0
 
-    read_schedule_response = client.get(f"/api/v1/weeks/{week_id}/schedule")
-    assert read_schedule_response.status_code == 200
-
-    saved_schedule = read_schedule_response.json()
-    assert "shifts" in saved_schedule
-
-    shifts_with_assignments = [s for s in saved_schedule["shifts"] if len(s["employees"]) > 0]
-    assert len(shifts_with_assignments) > 0
-    
-    # Check consistency of saved schedule
-    for saved_shift in shifts_with_assignments:
-        # 1. Find the original shift info to identify which index in the preview it corresponds to
-        matching_original_index = next(
-            (i for i, s in enumerate(shifts) if s["id"] == saved_shift["shift_id"]),
-            None
-        )
-        assert matching_original_index is not None, f"Saved shift {saved_shift['shift_id']} not found in original shifts"
-        
-        # 2. Get the previewed shift from the schedule output using the index
-        preview_shift = schedule["shifts"][matching_original_index]
-        
-        # 3. Compare the saved assignment with the previewed assignment
-        assert len(saved_shift["employees"]) == len(preview_shift["employees"])
-        
-        saved_emp_ids = set(e["employee_id"] for e in saved_shift["employees"])
-        preview_emp_ids = set(e["employee_id"] for e in preview_shift["employees"])
-        assert saved_emp_ids == preview_emp_ids
+    job_response = client.get(
+        f"/api/v1/schedule-generation-jobs/{preview_data['job_id']}"
+    )
+    assert job_response.status_code == 200
+    assert job_response.json()["status"] == "processing"
+    assert job_response.json()["result"] is None
+    assert job_response.json()["error"] is None
 
 
 @pytest.mark.integration
-def test_rf008_notify_unavailability_flow(client: TestClient):
+def test_rf008_notify_unavailability_flow(client: TestClient, dispatched_schedule_jobs):
     """
     RF008: Notificar indisponibilidade de funcionários.
     
     Fluxo completo:
     1. Criar cenário com funcionários insuficientes
     2. Tentar gerar escala
-    3. Verificar que o sistema notifica a indisponibilidade
-    4. Confirmar que API retorna possible=false
+    3. Verificar que o payload enviado ao gerador reflete ausência de funcionários
+    4. Confirmar que a API aceita o job assíncrono
     5. Verificar consistência do sistema (NF002)
     """
     client.post("/api/v1/dev/seed")
@@ -192,15 +160,19 @@ def test_rf008_notify_unavailability_flow(client: TestClient):
         "/api/v1/preview-schedule",
         json={"shift_vector": shifts}
     )
-    assert preview_response.status_code == 200
+    assert preview_response.status_code == 202
 
     preview_data = preview_response.json()
-    assert preview_data["possible"] is False
-    assert preview_data["schedule"] is None
+    assert preview_data["status"] == "processing"
+    assert dispatched_schedule_jobs[0].payload.employees == []
+    assert dispatched_schedule_jobs[0].payload.availabilities == []
 
 
 @pytest.mark.integration
-def test_rf008_notify_unavailability_insufficient_staff(client: TestClient):
+def test_rf008_notify_unavailability_insufficient_staff(
+    client: TestClient,
+    dispatched_schedule_jobs,
+):
     """
     RF008: Notificar indisponibilidade - cenário de staff insuficiente.
     
@@ -226,15 +198,18 @@ def test_rf008_notify_unavailability_insufficient_staff(client: TestClient):
         "/api/v1/preview-schedule",
         json={"shift_vector": shifts}
     )
-    assert preview_response.status_code == 200
+    assert preview_response.status_code == 202
 
     preview_data = preview_response.json()
-    assert preview_data["possible"] is False
-    assert preview_data["schedule"] is None
+    assert preview_data["status"] == "processing"
+    assert dispatched_schedule_jobs[0].payload.availabilities == []
 
 
 @pytest.mark.integration
-def test_rf008_notify_unavailability_inactive_employees(client: TestClient):
+def test_rf008_notify_unavailability_inactive_employees(
+    client: TestClient,
+    dispatched_schedule_jobs,
+):
     """
     RF008: Notificar indisponibilidade - cenário de funcionários inativos.
     
@@ -254,9 +229,9 @@ def test_rf008_notify_unavailability_inactive_employees(client: TestClient):
         "/api/v1/preview-schedule",
         json={"shift_vector": shifts}
     )
-    assert preview_response.status_code == 200
+    assert preview_response.status_code == 202
 
     preview_data = preview_response.json()
-    assert preview_data["possible"] is False
-    assert preview_data["schedule"] is None
-
+    assert preview_data["status"] == "processing"
+    assert dispatched_schedule_jobs[0].payload.employees == []
+    assert dispatched_schedule_jobs[0].payload.availabilities == []

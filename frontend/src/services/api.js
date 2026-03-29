@@ -179,11 +179,20 @@ export const GeneratedScheduleApi = {
     }
   },
 
-  generateSchedulePreview: async (shift_vector) => {
+  createSchedulePreviewJob: async (shift_vector) => {
     try {
       return await api.post(`/preview-schedule`, shift_vector);
     } catch (error) {
-      console.error('Error generating schedule preview:', error);
+      console.error('Error creating schedule preview job:', error);
+      throw error;
+    }
+  },
+
+  getScheduleGenerationJob: async (job_id) => {
+    try {
+      return await api.get(`/schedule-generation-jobs/${job_id}`);
+    } catch (error) {
+      console.error('Error fetching schedule generation job:', error);
       throw error;
     }
   },

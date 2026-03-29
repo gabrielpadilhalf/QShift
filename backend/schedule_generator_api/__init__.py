@@ -1,0 +1,1 @@
+"""Separate schedule generation service."""

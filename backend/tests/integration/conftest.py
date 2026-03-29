@@ -1,9 +1,10 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from app.main import app
-from app.api.dependencies import current_user_id
-from app.core.constants import DEMO_USER_ID
+from core_api.main import app
+from core_api.api.dependencies import current_user_id
+from core_api.core.constants import DEMO_USER_ID
+import core_api.services.schedule as schedule_service
 
 API_PREFIX = "/api/v1"
 
@@ -25,3 +26,19 @@ def seeded_data(client):
     response = client.post(f"{API_PREFIX}/dev/seed")
     assert response.status_code == 200
     return response.json()
+
+
+@pytest.fixture
+def dispatched_schedule_jobs(monkeypatch):
+    """Capture schedule generation dispatches without performing network calls."""
+    dispatched_jobs = []
+
+    def fake_dispatch(dispatch_request):
+        dispatched_jobs.append(dispatch_request)
+
+    monkeypatch.setattr(
+        schedule_service,
+        "dispatch_schedule_generation_job",
+        fake_dispatch,
+    )
+    return dispatched_jobs

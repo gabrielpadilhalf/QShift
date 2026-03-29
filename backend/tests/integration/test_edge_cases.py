@@ -220,8 +220,12 @@ def test_assignment_without_availability(client: TestClient, seeded_data):
 
 
 @pytest.mark.integration
-def test_preview_excludes_inactive_employees(client: TestClient, seeded_data):
-    """Should not include inactive employees in schedule preview."""
+def test_preview_excludes_inactive_employees(
+    client: TestClient,
+    seeded_data,
+    dispatched_schedule_jobs,
+):
+    """Should exclude inactive employees from the dispatched generation payload."""
     week_id = seeded_data["week_id"]
     employees = client.get("/api/v1/employees").json()
 
@@ -234,10 +238,10 @@ def test_preview_excludes_inactive_employees(client: TestClient, seeded_data):
         json={"shift_vector": shifts},
     )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["possible"] is False
-    assert data["schedule"] is None
+    assert response.status_code == 202
+    assert response.json()["status"] == "processing"
+    assert dispatched_schedule_jobs[0].payload.employees == []
+    assert dispatched_schedule_jobs[0].payload.availabilities == []
 
 
 @pytest.mark.integration
@@ -313,8 +317,12 @@ def test_schedule_with_empty_employee_list(client: TestClient, seeded_data):
 
 
 @pytest.mark.integration
-def test_large_min_staff_with_few_employees(client: TestClient, seeded_data):
-    """Should handle shift with min_staff larger than available employees."""
+def test_large_min_staff_with_few_employees(
+    client: TestClient,
+    seeded_data,
+    dispatched_schedule_jobs,
+):
+    """Should accept preview job creation even with impossible staffing demand."""
     week_id = seeded_data["week_id"]
 
     response = client.post(
@@ -334,7 +342,9 @@ def test_large_min_staff_with_few_employees(client: TestClient, seeded_data):
         "/api/v1/preview-schedule",
         json={"shift_vector": shifts}
     )
-    assert preview_response.status_code == 200
+    assert preview_response.status_code == 202
+    assert preview_response.json()["status"] == "processing"
+    assert len(dispatched_schedule_jobs) == 1
 
 
 @pytest.mark.integration
@@ -382,4 +392,3 @@ def test_overlapping_availabilities_same_day(client: TestClient, seeded_data):
         json={"weekday": 1, "start_time": "12:00", "end_time": "18:00"},
     )
     assert second_response.status_code == 201
-

@@ -9,6 +9,9 @@ import { Button } from '../atomic/AtmButton/index.js';
 import { AtmInput } from '../atomic/AtmInput/index.js';
 import { MolLoadingPage } from '../atomic/MolLoadingPage';
 
+const SCHEDULE_JOB_POLL_INTERVAL_MS = 1500;
+const SCHEDULE_JOB_MAX_ATTEMPTS = 120;
+
 function ShiftConfigPage({
   selectedDays,
   startDate,
@@ -168,6 +171,28 @@ function ShiftConfigPage({
     return scheduleModified;
   };
 
+  const wait = (ms) => new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+  const waitForSchedulePreviewJob = async (jobId) => {
+    for (let attempt = 0; attempt < SCHEDULE_JOB_MAX_ATTEMPTS; attempt += 1) {
+      const jobResponse = await GeneratedScheduleApi.getScheduleGenerationJob(jobId);
+      const jobData = jobResponse.data;
+
+      if (jobData.status === 'done') return jobData;
+      if (jobData.status === 'failed') {
+        throw new Error(jobData.error || 'Schedule generation failed.');
+      }
+
+      if (attempt < SCHEDULE_JOB_MAX_ATTEMPTS - 1) {
+        await wait(SCHEDULE_JOB_POLL_INTERVAL_MS);
+      }
+    }
+
+    throw new Error('Schedule generation timed out. Please try again.');
+  };
+
   const createSchedule = async () => {
     const result = handleShiftsSchedule();
     setIsLoading(true);
@@ -183,14 +208,17 @@ function ShiftConfigPage({
       try {
         const week = { start_date: startDate.toISOString().split('T')[0], open_days: openDaysMask };
         setWeekData(week);
-        const responsePreviewSchedule = await GeneratedScheduleApi.generateSchedulePreview({ shift_vector: shiftsSchedule });
-        const preciewScheduleData = responsePreviewSchedule.data;
-        if (preciewScheduleData.possible && preciewScheduleData.schedule) {
-          const convertedData = convertScheduleData(preciewScheduleData.schedule.shifts);
+        const responsePreviewJob = await GeneratedScheduleApi.createSchedulePreviewJob({ shift_vector: shiftsSchedule });
+        const previewJobData = await waitForSchedulePreviewJob(responsePreviewJob.data.job_id);
+        const previewScheduleData = previewJobData.result;
+        if (previewScheduleData?.possible && previewScheduleData.schedule) {
+          const convertedData = convertScheduleData(previewScheduleData.schedule.shifts);
           setPreviewSchedule(convertedData);
         } else {
           alert('Unable to generate a viable schedule with the current settings. Check shift and employee settings.');
+          setIsLoading(false);
           navigate('/staff');
+          return;
         }
         navigate('/schedule');
       } catch (error) {
