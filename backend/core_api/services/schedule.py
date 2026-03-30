@@ -16,6 +16,24 @@ from shared.schedule_callback import (
 )
 
 
+def wake_schedule_generator() -> None:
+    from core_api.core.config import settings
+
+    base_url = settings.SCHEDULE_GENERATOR_BASE_URL.rstrip("/")
+    url = f"{base_url}/healthz"
+    request = urllib_request.Request(url, method="GET")
+
+    try:
+        with urllib_request.urlopen(
+            request,
+            timeout=settings.SCHEDULE_GENERATOR_WAKE_TIMEOUT_SECONDS,
+        ) as response:
+            status_code = getattr(response, "status", response.getcode())
+            _ = status_code
+    except (urllib_error.URLError, urllib_error.HTTPError, TimeoutError, OSError) as exc:
+        logger.info("Schedule generator healthz was called but returned error: %s", exc)
+
+
 def build_schedule_generation_payload(
     *,
     db: Session,

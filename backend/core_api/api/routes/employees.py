@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, status, Response, HTTPException
+from fastapi import APIRouter, Depends, status, Response, HTTPException, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,7 @@ from core_api.core.db import get_session
 from core_api.api.dependencies import current_user_id
 from core_api.models.employee import Employee
 import core_api.services.employee as employee_service
+import core_api.services.schedule as schedule_service
 from core_api.schemas.employee import (
     EmployeeCreate,
     EmployeeUpdate,
@@ -56,8 +57,12 @@ def create_employee(
 # READ
 @router.get("", response_model=list[EmployeeOut], status_code=status.HTTP_200_OK)
 def list_employees(
-    db: Session = Depends(get_session), user_id: UUID = Depends(current_user_id)
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_session),
+    user_id: UUID = Depends(current_user_id),
 ):
+    background_tasks.add_task(schedule_service.wake_schedule_generator)
+
     employees = (
         db.query(Employee)
         .filter(Employee.user_id == user_id)

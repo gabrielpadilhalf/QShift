@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import pytest
+import core_api.services.schedule as schedule_service
 
 
 @pytest.mark.integration
@@ -109,6 +110,27 @@ def test_list_employees_ordered_by_name(client: TestClient, seeded_data):
     employees = response.json()
     names = [emp["name"] for emp in employees]
     assert names == sorted(names)
+
+
+@pytest.mark.integration
+def test_list_employees_triggers_schedule_generator_wakeup(
+    client: TestClient, seeded_data, monkeypatch
+):
+    calls = []
+
+    def fake_wake_schedule_generator():
+        calls.append("called")
+
+    monkeypatch.setattr(
+        schedule_service,
+        "wake_schedule_generator",
+        fake_wake_schedule_generator,
+    )
+
+    response = client.get("/api/v1/employees")
+
+    assert response.status_code == 200
+    assert calls == ["called"]
 
 
 @pytest.mark.integration
@@ -295,4 +317,3 @@ def test_delete_employee_cascades_availabilities(client: TestClient, seeded_data
 
     avail_response = client.get(f"/api/v1/employees/{employee_id}/availabilities")
     assert avail_response.status_code == 404
-
