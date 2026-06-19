@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from core_api.core.db import get_session
 from core_api.api.dependencies import current_user_id
 from core_api.models.employee import Employee
+from core_api.models.availability import Availability
 import core_api.services.employee as employee_service
 import core_api.services.schedule as schedule_service
 from core_api.schemas.employee import (
@@ -15,6 +16,7 @@ from core_api.schemas.employee import (
     EmployeeMonthReport,
     EmployeeYearReport,
 )
+from core_api.schemas.availability import AvailabilityOut
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -72,6 +74,17 @@ def list_employees(
 
     return employees
 
+@router.get("/availabilities", response_model=list[AvailabilityOut], status_code=status.HTTP_200_OK)
+def list_all_availabilities(
+    db: Session = Depends(get_session),
+    user_id: UUID = Depends(current_user_id),
+):
+    availabilities = (
+        db.query(Availability)
+        .filter(Availability.user_id == user_id)
+        .all()
+    )
+    return availabilities
 
 @router.get(
     "/{employee_id}", response_model=EmployeeOut, status_code=status.HTTP_200_OK
