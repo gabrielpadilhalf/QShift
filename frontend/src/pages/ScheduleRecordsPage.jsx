@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GeneratedScheduleApi } from '../services/api.js';
+import { GeneratedScheduleApi, AvailabilityApi } from '../services/api.js';
 import { exportToExcel } from '../utils/exportSchedule.js';
 import { months, daysOfWeek, scheduleEmpty } from '../constants/constantsOfTable.js';
 import { Button } from '../atomic/AtmButton/index.js';
@@ -35,6 +35,19 @@ function ScheduleRecordsPage({
   const [editMode, setEditMode] = useState(false);
   const [scheduleData, setScheduleData] = useState(scheduleEmpty);
   const [schedulesCache, setSchedulesCache] = useState({});
+  const [availabilities, setAvailabilities] = useState([]);
+
+  useEffect(() => {
+    async function fetchAvails() {
+      try {
+        const response = await AvailabilityApi.getAllAvailabilities();
+        setAvailabilities(response);
+      } catch (error) {
+        console.error('Error fetching availabilities:', error);
+      }
+    }
+    fetchAvails();
+  }, []);
 
   const convertScheduleData = (shifts) => {
     let scheduleModified = {
@@ -226,6 +239,7 @@ function ScheduleRecordsPage({
               employeeList={employees}
               week={weekRecords}
               editMode={editMode}
+              availabilities={availabilities}
             />
           </>
         )}
