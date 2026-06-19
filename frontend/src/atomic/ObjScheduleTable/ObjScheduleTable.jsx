@@ -10,7 +10,7 @@ import './ObjScheduleTable.css';
 /**
  * ObjScheduleTable – full schedule table with employee selector modal
  */
-export function ObjScheduleTable({ scheduleData, setScheduleData, employeeList, week, editMode }) {
+export function ObjScheduleTable({ scheduleData, setScheduleData, employeeList, week, editMode, availabilities = [] }) {
   const [showEmployeeSelector, setShowEmployeeSelector] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const maxSlots = Math.max(...daysOfWeek.map((day) => scheduleData[day].length));
@@ -111,6 +111,7 @@ export function ObjScheduleTable({ scheduleData, setScheduleData, employeeList, 
               setShowEmployeeSelector(false);
               setSelectedSlot(null);
             }}
+            availabilities={availabilities}
           />
         </ObjModal>
       )}

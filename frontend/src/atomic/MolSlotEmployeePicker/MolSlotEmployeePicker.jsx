@@ -2,12 +2,30 @@ import { AtmText } from "../AtmText/Text.jsx";
 import { SelectableButton, Button } from "../AtmButton/index.js";
 import { AtmAvatar } from "../AtmAvatar/index.js";
 import { Check } from "lucide-react";
+import { daysOfWeek } from '../../constants/constantsOfTable.js';
 import './MolSlotEmployeePicker.css';
 
 /**
  * MolSlotEmployeesPicker – employee selector for a time slot
  */
-export function MolSlotEmployeesPicker({ day, slot, assignedEmployees, employeeList, onToggleEmployee, onClose }) {
+export function MolSlotEmployeesPicker({ day, slot, assignedEmployees, employeeList, onToggleEmployee, onClose, availabilities = [] }) {
+    const dayIndex = daysOfWeek.indexOf(day);
+
+    const availableEmployees = employeeList.filter((emp) => {
+        if (!emp.active) return false;
+        if (assignedEmployees.some((assignedEmp) => assignedEmp.id === emp.id)) return true;
+        const empAvails = availabilities.filter(
+            (av) => av.employee_id === emp.id && av.weekday === dayIndex
+        );
+
+        // Check if any availability window fully covers the shift
+        return empAvails.some((av) => {
+            const avStart = av.start_time.slice(0, 5);
+            const avEnd = av.end_time.slice(0, 5);
+            return avStart <= slot.startTime && avEnd >= slot.endTime;
+        });
+    });
+
     return (
         <div className="mol-slot-picker">
             <div className="mol-slot-picker__info">
@@ -17,8 +35,7 @@ export function MolSlotEmployeesPicker({ day, slot, assignedEmployees, employeeL
                 </AtmText>
             </div>
             <div className="mol-slot-picker__list">
-                {employeeList
-                    .filter((emp) => emp.active)
+                {availableEmployees
                     .map((emp) => {
                         const isSelected = assignedEmployees.some((assignedEmp) => assignedEmp.id === emp.id);
                         return (
