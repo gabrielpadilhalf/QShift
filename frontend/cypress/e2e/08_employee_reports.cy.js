@@ -2,7 +2,7 @@ describe('Employee Reports: consistência de dados com o backend', () => {
   let createdEmployeeIds = [];
   let scheduleCreated = false;
 
-  // ── SETUP: registro → funcionários → escala aprovada ─────────────────────
+  // ── SETUP: registro → funcionários → escala aprovada via API ─────────────
   before(() => {
     cy.fixture('mockData').then((data) => {
       cy.clearTemplatesDB();
@@ -16,11 +16,9 @@ describe('Employee Reports: consistência de dados com o backend', () => {
       }).then((loginRes) => {
         if (loginRes.status === 200) {
           const token = loginRes.body.access_token;
-          // Remove funcionários residuais
           data.employees.forEach((emp) => {
             cy.deleteEmployeeByNameViaApi(emp.name, token);
           });
-          // Remove o usuário de teste
           cy.request({
             method: 'DELETE',
             url: `${data.apiBase}/users/me`,
@@ -30,7 +28,7 @@ describe('Employee Reports: consistência de dados com o backend', () => {
         }
       });
 
-      // 2. Registra o usuário de teste
+      // 2. Registra o usuário de teste via UI
       cy.visit('/register');
       cy.get('#email').type(data.testUser.email);
       cy.get('#confirm-email').type(data.testUser.email);
@@ -38,96 +36,99 @@ describe('Employee Reports: consistência de dados com o backend', () => {
       cy.get('button[type="submit"]').click();
       cy.url().should('include', '/login');
 
-      // 3. Obtém token e cria funcionários + disponibilidade via API
+      // 3. Login e criação de toda a estrutura de dados via API
       cy.request({
         method: 'POST',
         url: `${data.apiBase}/auth/login`,
         body: { email: data.testUser.email, password: data.testUser.password },
       }).then((loginRes) => {
         const token = loginRes.body.access_token;
+        const headers = { Authorization: `Bearer ${token}` };
 
+        // 3a. Cria funcionários com disponibilidade full-week
         data.employees.forEach((emp) => {
           cy.request({
             method: 'POST',
             url: `${data.apiBase}/employees`,
-            headers: { Authorization: `Bearer ${token}` },
+            headers,
             body: { name: emp.name, active: true, weekly_workload_hours: emp.workload },
           }).then((empRes) => {
-            createdEmployeeIds.push(empRes.body.id);
-
-            // Disponibilidade full-week: seg(0) a dom(6), 06:00–22:00
+            const empId = empRes.body.id;
+            createdEmployeeIds.push(empId);
             [0, 1, 2, 3, 4, 5, 6].forEach((weekday) => {
               cy.request({
                 method: 'POST',
-                url: `${data.apiBase}/employees/${empRes.body.id}/availabilities`,
-                headers: { Authorization: `Bearer ${token}` },
+                url: `${data.apiBase}/employees/${empId}/availabilities`,
+                headers,
                 body: { weekday, start_time: '06:00', end_time: '22:00' },
                 failOnStatusCode: false,
               });
             });
           });
         });
-      });
 
-      // 4. Gera e aprova uma escala (necessário para Employee Reports ter dados)
-      cy.loginViaApi(data.testUser.email, data.testUser.password);
-      cy.visit('/staff');
-      cy.get('button').contains('Next').click();
-      cy.url().should('include', '/calendar');
+        // 3b. Calcula a segunda-feira da semana atual
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0=Dom, 1=Seg...
+        const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() + daysToMonday);
+        const mondayStr = monday.toISOString().split('T')[0];
 
-      // Avança 3 meses para evitar conflito com semanas já existentes
-      cy.get('button[title="Next month"]').click();
-      cy.get('button[title="Next month"]').click();
-      cy.get('button[title="Next month"]').click();
+        // 3c. Cria a semana para o mês atual (necessário para aparecer no report)
+        cy.request({
+          method: 'POST',
+          url: `${data.apiBase}/weeks`,
+          headers,
+          body: { start_date: mondayStr, open_days: [0, 1, 2, 3, 4, 5] },
+        }).then((weekRes) => {
+          const weekId = weekRes.body.id;
 
-      cy.get('table tbody tr').first().within(() => {
-        cy.get('button').not(':disabled').first().click({ force: true });
-      });
+          // 3d. Define os turnos da semana
+          const shiftsToCreate = [];
+          [0, 1, 2, 3, 4].forEach((weekday) => {
+            shiftsToCreate.push({ weekday, start_time: '08:00', end_time: '12:00', min_staff: 2 });
+            shiftsToCreate.push({ weekday, start_time: '11:00', end_time: '14:00', min_staff: 1 });
+            shiftsToCreate.push({ weekday, start_time: '15:00', end_time: '19:00', min_staff: 2 });
+          });
+          shiftsToCreate.push({ weekday: 5, start_time: '09:00', end_time: '12:00', min_staff: 2 });
+          shiftsToCreate.push({ weekday: 5, start_time: '13:00', end_time: '16:00', min_staff: 1 });
+          shiftsToCreate.push({ weekday: 5, start_time: '16:00', end_time: '20:00', min_staff: 2 });
 
-      cy.get('.calendar-page__actions button').contains('Next').click();
-      cy.url().should('include', '/shift-config');
+          // 3e. Cria todos os turnos e coleta seus IDs
+          const shiftIds = [];
+          shiftsToCreate.forEach((shift) => {
+            cy.request({
+              method: 'POST',
+              url: `${data.apiBase}/weeks/${weekId}/shifts`,
+              headers,
+              body: shift,
+            }).then((shiftRes) => {
+              shiftIds.push(shiftRes.body.id);
+            });
+          });
 
-      // Adiciona turnos usando o botão "+" de cada coluna (sem drag-and-drop)
-      const DAY_SUFFIX = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+          // 3f. Envia as atribuições → isso "aprova" a escala no backend
+          cy.then(() => {
+            const schedulePayload = {
+              shifts: shiftIds.map((shiftId, idx) => ({
+                shift_id: shiftId,
+                // Distribui funcionários em round-robin pelos turnos
+                employee_ids: [createdEmployeeIds[idx % createdEmployeeIds.length]],
+              })),
+            };
 
-      const addShiftToDay = (dayColIndex, shift) => {
-        const uniqueName = `${shift.name} ${DAY_SUFFIX[dayColIndex]}`;
-
-        cy.get('.obj-day-column').eq(dayColIndex)
-          .find('.obj-day-column__add-btn')
-          .click({ force: true });
-        cy.contains('Create New Template').should('be.visible');
-        cy.get('input[placeholder*="Morning Rush"]').clear().type(uniqueName);
-        cy.get('input[type="time"]').first().clear().type(shift.start);
-        cy.get('input[type="time"]').last().clear().type(shift.end);
-        cy.get('input[type="number"]').clear().type(shift.staff.toString());
-        cy.get('button').contains('Save Template').click();
-        cy.contains('Create New Template').should('not.exist');
-      };
-
-      // Turnos 1/2/3 → seg(0) a sex(4)
-      [0, 1, 2, 3, 4].forEach((dayIdx) => {
-        addShiftToDay(dayIdx, data.shifts[0]);
-        addShiftToDay(dayIdx, data.shifts[1]);
-        addShiftToDay(dayIdx, data.shifts[2]);
-      });
-
-      // Turno Sab 1/2/3 → sab(5)
-      addShiftToDay(5, data.shifts[3]);
-      addShiftToDay(5, data.shifts[4]);
-      addShiftToDay(5, data.shifts[5]);
-
-      // Dispara a geração (job assíncrono)
-      cy.get('.shift-config__create-btn').click();
-      cy.url({ timeout: 60000 }).should('not.include', '/shift-config');
-
-      cy.url().then((url) => {
-        if (url.includes('/schedule')) {
-          cy.on('window:alert', () => true);
-          cy.get('button').contains('Approved').click();
-          cy.url().should('include', '/staff');
-          scheduleCreated = true;
-        }
+            cy.request({
+              method: 'POST',
+              url: `${data.apiBase}/weeks/${weekId}/schedule`,
+              headers,
+              body: schedulePayload,
+            }).then(() => {
+              scheduleCreated = true;
+              cy.log(`✅ Escala aprovada via API para a semana de ${mondayStr}`);
+            });
+          });
+        });
       });
     });
   });

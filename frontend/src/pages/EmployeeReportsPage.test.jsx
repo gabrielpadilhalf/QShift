@@ -71,7 +71,7 @@ describe('EmployeeReportsPage — sem funcionários', () => {
     renderPage({ employeesList: [], currentEmployee: null });
     // O componente deve renderizar texto informativo em vez de lançar alert()
     expect(
-      screen.getByText(/no employees available/i),
+      screen.getByText(/add employees first to view their reports/i),
     ).toBeInTheDocument();
   });
 });
