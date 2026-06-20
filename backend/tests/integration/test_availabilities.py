@@ -294,3 +294,57 @@ def test_delete_availability_not_found(client: TestClient, seeded_data):
 
     assert response.status_code == 404
 
+
+
+# ─── Bulk endpoint: GET /employees/availabilities ────────────────────────────
+
+
+@pytest.mark.integration
+def test_get_all_availabilities_returns_all_employees(client: TestClient, seeded_data):
+    """GET /employees/availabilities deve retornar as disponibilidades de todos
+    os funcionários do usuário autenticado em uma única requisição."""
+    employees = client.get("/api/v1/employees").json()
+    assert len(employees) > 0
+
+    # Conta o total somando as individuais por funcionário
+    total_individual = sum(
+        len(client.get(f"/api/v1/employees/{e['id']}/availabilities").json())
+        for e in employees
+    )
+
+    response = client.get("/api/v1/employees/availabilities")
+
+    assert response.status_code == 200
+    all_avails = response.json()
+    assert isinstance(all_avails, list)
+    assert len(all_avails) == total_individual
+
+    # Cada item deve ter os campos esperados
+    for avail in all_avails:
+        assert "id" in avail
+        assert "employee_id" in avail
+        assert "weekday" in avail
+        assert "start_time" in avail
+        assert "end_time" in avail
+
+    # Todos os employee_ids devem pertencer a funcionários do usuário autenticado
+    employee_ids = {e["id"] for e in employees}
+    assert all(a["employee_id"] in employee_ids for a in all_avails)
+
+
+@pytest.mark.integration
+def test_get_all_availabilities_empty_when_none_exist(client: TestClient, seeded_data):
+    """GET /employees/availabilities deve retornar lista vazia quando nenhuma
+    disponibilidade está cadastrada para os funcionários do usuário."""
+    employees = client.get("/api/v1/employees").json()
+    for emp in employees:
+        avails = client.get(f"/api/v1/employees/{emp['id']}/availabilities").json()
+        for av in avails:
+            client.delete(
+                f"/api/v1/employees/{emp['id']}/availabilities/{av['id']}"
+            )
+
+    response = client.get("/api/v1/employees/availabilities")
+
+    assert response.status_code == 200
+    assert response.json() == []

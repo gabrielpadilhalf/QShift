@@ -3,7 +3,7 @@ import { MolPageHeader } from '../atomic/MolPageHeader';
 import { ObjScheduleTable } from '../atomic/ObjScheduleTable';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GeneratedScheduleApi, ShiftConfigApi } from '../services/api.js';
+import { GeneratedScheduleApi, ShiftConfigApi, AvailabilityApi } from '../services/api.js';
 import { daysOfWeek, scheduleEmpty } from '../constants/constantsOfTable.js';
 import { Button } from '../atomic/AtmButton/index.js';
 import { MolLoadingPage } from '../atomic/MolLoadingPage';
@@ -24,6 +24,19 @@ function GeneratedSchedule({
   const navigate = useNavigate();
   const [scheduleData, setScheduleData] = useState(previewSchedule || scheduleEmpty);
   const [editMode, setEditMode] = useState(false);
+  const [availabilities, setAvailabilities] = useState([]);
+
+  useEffect(() => {
+    async function fetchAvails() {
+      try {
+        const response = await AvailabilityApi.getAllAvailabilities();
+        setAvailabilities(response);
+      } catch (error) {
+        console.error('Error fetching availabilities:', error);
+      }
+    }
+    fetchAvails();
+  }, []);
 
   useEffect(() => {
     if (!previewSchedule || !weekData || employees.length === 0) {
@@ -103,6 +116,7 @@ function GeneratedSchedule({
           employeeList={employees}
           week={weekData}
           editMode={editMode}
+          availabilities={availabilities}
         />
 
         {!editMode ? (

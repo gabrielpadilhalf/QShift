@@ -135,6 +135,16 @@ export const AvailabilityApi = {
     }
   },
 
+  getAllAvailabilities: async () => {
+    try {
+      const response = await api.get('/employees/availabilities');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching all availabilities:', error);
+      throw error;
+    }
+  },
+
   replaceAllAvailabilities: async (employeeId, availabilities) => {
     try {
       const current = await AvailabilityApi.getAvailabilityEmployee(employeeId);
